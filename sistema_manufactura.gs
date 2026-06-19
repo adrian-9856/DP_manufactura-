@@ -43,11 +43,10 @@ const CAT_COL = {
   BANCO:       5,  // F – Banco
   TITULAR:     6,  // G – Titular
   DPI:         7,  // H – DPI
-  EMAIL:       8,  // I – Email
-  // J(9) = Programas texto, K(10) = Producto, L(11) = Precio
-  HIJOS:      12,  // M – N° Hijos
-  CCI:        13,  // N – CCI (checkbox)
-  CUNDE:      14,  // O – CUNDE (checkbox)
+  PROGRAMAS:   8,  // I – Programas (texto)
+  HIJOS:       9,  // J – N° Hijos
+  CCI:        10,  // K – CCI (checkbox)
+  CUNDE:      11,  // L – CUNDE (checkbox)
 };
 
 // ========================= MENU =========================
@@ -213,54 +212,44 @@ function _setupCatalogos_(sh) {
   sh.clear();
   sh.clearFormats();
 
-  sh.getRange("A1:I1").setValues([["Creamos ID", "Nombre Completo", "Estado", "Nº Cuenta", "Tipo Cuenta", "Banco", "Titular", "DPI", "Email"]])
+  // A–H: datos bancarios/personales | I: programas | J–L: datos sociales
+  sh.getRange("A1:H1").setValues([["Creamos ID", "Nombre Completo", "Estado", "Nº Cuenta", "Tipo Cuenta", "Banco", "Titular", "DPI"]])
     .setBackground("#263238").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
-  // Mejora 3: col J = Programas (texto libre)
-  sh.getRange("J1").setValue("Programas")
+  sh.getRange("I1").setValue("Programas")
     .setBackground("#263238").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
-  sh.getRange("K1:L1").setValues([["Producto", "Precio (Q)"]])
-    .setBackground("#1565c0").setFontColor("#ffffff").setFontWeight("bold")
-    .setHorizontalAlignment("center").setVerticalAlignment("middle");
-
-  sh.getRange("M1:O1").setValues([["N° Hijos", "CCI", "CUNDE"]])
+  sh.getRange("J1:L1").setValues([["N° Hijos", "CCI", "CUNDE"]])
     .setBackground("#4a148c").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
   sh.setFrozenRows(1);
   sh.setRowHeight(1, 25);
 
-  sh.setColumnWidth(1, 100);
-  sh.setColumnWidth(2, 180);
-  sh.setColumnWidth(3, 100);
-  sh.setColumnWidth(4, 130);
-  sh.setColumnWidth(5, 130);
-  sh.setColumnWidth(6, 120);
-  sh.setColumnWidth(7, 150);
-  sh.setColumnWidth(8, 110);
-  sh.setColumnWidth(9, 150);
-  sh.setColumnWidth(10, 160);  // J – Programas
-  sh.setColumnWidth(11, 150);
-  sh.setColumnWidth(12, 100);
-  sh.setColumnWidth(13, 80);   // M – N° Hijos
-  sh.setColumnWidth(14, 60);   // N – CCI
-  sh.setColumnWidth(15, 70);   // O – CUNDE
+  sh.setColumnWidth(1,  100); // A – Creamos ID
+  sh.setColumnWidth(2,  180); // B – Nombre
+  sh.setColumnWidth(3,  100); // C – Estado
+  sh.setColumnWidth(4,  130); // D – Nº Cuenta
+  sh.setColumnWidth(5,  130); // E – Tipo Cuenta
+  sh.setColumnWidth(6,  120); // F – Banco
+  sh.setColumnWidth(7,  150); // G – Titular
+  sh.setColumnWidth(8,  110); // H – DPI
+  sh.setColumnWidth(9,  180); // I – Programas
+  sh.setColumnWidth(10,  80); // J – N° Hijos
+  sh.setColumnWidth(11,  60); // K – CCI
+  sh.setColumnWidth(12,  70); // L – CUNDE
 
-  sh.getRange("A2:J1000").setBackground("#ffffff").setFontColor("#212121");
-  sh.getRange("A2:J1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("A2:I1000").setBackground("#ffffff").setFontColor("#212121");
+  sh.getRange("A2:I1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
-  sh.getRange("K2:L1000").setBackground("#ffffff").setFontColor("#212121");
+  sh.getRange("J2:J1000").setBackground("#fce4ec").setFontColor("#212121");
+  sh.getRange("J2:J1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+
+  sh.getRange("K2:L1000").insertCheckboxes();
+  sh.getRange("K2:L1000").setBackground("#fce4ec");
   sh.getRange("K2:L1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
-  sh.getRange("L2:L1000").setNumberFormat('"Q " #,##0.00');
-
-  sh.getRange("M2:M1000").setBackground("#fce4ec").setFontColor("#212121");
-  sh.getRange("M2:M1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
-  sh.getRange("N2:O1000").insertCheckboxes();
-  sh.getRange("N2:O1000").setBackground("#fce4ec").setFontColor("#212121");
-  sh.getRange("N2:O1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
   sh.getRange("C2:C1000").setDataValidation(
     SpreadsheetApp.newDataValidation()
@@ -281,25 +270,19 @@ function _setupInactivos_(sh) {
   sh.clear();
   sh.clearFormats();
 
-  sh.getRange("A1:I1").setValues([["Creamos ID", "Nombre Completo", "Estado", "Nº Cuenta", "Tipo Cuenta", "Banco", "Titular", "DPI", "Email"]])
+  sh.getRange("A1:H1").setValues([["Creamos ID", "Nombre Completo", "Estado", "Nº Cuenta", "Tipo Cuenta", "Banco", "Titular", "DPI"]])
     .setBackground("#5d4037").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
   sh.setFrozenRows(1);
   sh.setRowHeight(1, 25);
 
-  sh.setColumnWidth(1, 110);
-  sh.setColumnWidth(2, 200);
-  sh.setColumnWidth(3, 120);
-  sh.setColumnWidth(4, 130);
-  sh.setColumnWidth(5, 130);
-  sh.setColumnWidth(6, 120);
-  sh.setColumnWidth(7, 150);
-  sh.setColumnWidth(8, 110);
-  sh.setColumnWidth(9, 150);
+  sh.setColumnWidth(1, 110); sh.setColumnWidth(2, 200); sh.setColumnWidth(3, 120);
+  sh.setColumnWidth(4, 130); sh.setColumnWidth(5, 130); sh.setColumnWidth(6, 120);
+  sh.setColumnWidth(7, 150); sh.setColumnWidth(8, 110);
 
-  sh.getRange("A2:I1000").setBackground("#fafafa").setFontColor("#212121");
-  sh.getRange("A2:I1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("A2:H1000").setBackground("#fafafa").setFontColor("#212121");
+  sh.getRange("A2:H1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 }
 
 function _setupResumen_(sh, titulo) {
@@ -578,24 +561,15 @@ function agregarEntregaRapida() {
     const proyectos     = _obtenerHistorico_("proyectos");
     const metodos       = _obtenerHistorico_("metodos");
 
-    const dataCat = cat.getDataRange().getValues();
+    // Leer productos y precios del Catálogo_Productos (col B = nombre, col C = precio, col D = activo)
     const productosConPrecio = [];
-    for (let i = 1; i < dataCat.length; i++) {
-      const prod   = String(dataCat[i][10] || "").trim();
-      const precio = Number(dataCat[i][11]) || 0;
-      if (prod) productosConPrecio.push({ nombre: prod, precio: precio });
-    }
-
-    // También leer del Catálogo_Productos (col B = nombre, col C = precio, col D = activo)
     const catProd = ss.getSheetByName(SHEET_CATALOGO_PROD);
     if (catProd && catProd.getLastRow() > 1) {
       catProd.getRange(2, 1, catProd.getLastRow() - 1, 4).getValues().forEach(r => {
         const prod   = String(r[1] || "").trim();
         const precio = Number(r[2]) || 0;
         const activo = r[3];
-        if (prod && activo !== false && !productosConPrecio.find(p => p.nombre === prod)) {
-          productosConPrecio.push({ nombre: prod, precio });
-        }
+        if (prod && activo !== false) productosConPrecio.push({ nombre: prod, precio });
       });
     }
 
@@ -676,7 +650,7 @@ function agregarEntregaRapida() {
 
         <div class="form-group">
           <label for="producto">Producto * (escribe o selecciona)</label>
-          <input type="text" id="producto" list="productos-list" placeholder="Ej: Pulsera, Mantel..." required onchange="actualizarPrecio()">
+          <input type="text" id="producto" list="productos-list" placeholder="Ej: Pulsera, Mantel..." required onchange="actualizarPrecio()" oninput="actualizarPrecio()">
           <datalist id="productos-list">
             ${productosConPrecio.map(p => `<option value="${p.nombre}" data-precio="${p.precio}">`).join('')}
             ${productosHistorico.map(p => `<option value="${p}">`).join('')}
@@ -740,10 +714,10 @@ function agregarEntregaRapida() {
         });
 
         function actualizarPrecio() {
-          const productoInput = document.getElementById('producto').value.trim();
+          const productoInput = document.getElementById('producto').value.trim().toLowerCase();
           const precioInput   = document.getElementById('precio');
           if (!productoInput) return;
-          const producto = productosConPrecio.find(p => p.nombre === productoInput);
+          const producto = productosConPrecio.find(p => p.nombre.toLowerCase() === productoInput);
           if (producto && producto.precio > 0) {
             precioInput.value = producto.precio;
             actualizarResumen();
@@ -1119,7 +1093,7 @@ function procesarParticipantesInactivos() {
 
   for (let i = data.length - 1; i >= 1; i--) {
     if (data[i][CAT_COL.ESTADO] === "Inactivo") {
-      shIna.appendRow(data[i].slice(0, 9));
+      shIna.appendRow(data[i].slice(0, 8));
       rowsAEliminar.push(i + 1);
     }
   }
