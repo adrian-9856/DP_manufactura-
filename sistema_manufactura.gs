@@ -63,8 +63,7 @@ function onOpen() {
       .addItem("✏️ Editar fila seleccionada",  "editarFilaSeleccionada")
       .addItem("✅ Marcar fila como pagada",   "marcarFilaPagada")
       .addSeparator()
-      .addItem("📅 Cerrar quincena actual",       "cerrarQuincenaActual")
-      .addItem("🗓️ Cerrar mes",                   "cerrarMes")
+      .addItem("📅 Cerrar quincena actual",         "cerrarQuincenaActual")
       .addItem("📋 Actualizar participación",      "actualizarParticipacionProgramas")
       .addSeparator()
       .addItem("🔄 Actualizar todo", "actualizarTodo")
@@ -110,9 +109,10 @@ function desinstalarSistema() {
       SHEET_RECEPCIONES, SHEET_CATALOGOS, SHEET_INACTIVOS,
       SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS, SHEET_PAGOS_PEND,
       SHEET_DASHBOARD, SHEET_REPORTES,
-      SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_PROGRAMAS, SHEET_HISTORIAL_PAGOS,
+      SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS,
+      SHEET_PROGRAMAS, SHEET_HISTORIAL_PAGOS,
       SHEET_ARCHIVO_REC, SHEET_CATALOGO_PROD,
-      "Resumen Mensual"  // hoja antigua — borrar si existe
+      "Resumen Mensual"
     ].forEach(n => {
       const sh = ss.getSheetByName(n);
       if (sh) ss.deleteSheet(sh);
@@ -131,7 +131,8 @@ function _crearEstructura_(recrear) {
     SHEET_RECEPCIONES, SHEET_CATALOGOS, SHEET_INACTIVOS,
     SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS, SHEET_PAGOS_PEND,
     SHEET_DASHBOARD, SHEET_REPORTES,
-    SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_PROGRAMAS, SHEET_HISTORIAL_PAGOS,
+    SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS,
+    SHEET_PROGRAMAS, SHEET_HISTORIAL_PAGOS,
     SHEET_ARCHIVO_REC, SHEET_CATALOGO_PROD
   ];
 
@@ -154,6 +155,7 @@ function _crearEstructura_(recrear) {
   const chq  = _getOrCreate_(SHEET_CHEQUES);
   const tra  = _getOrCreate_(SHEET_TRANSFERENCIAS);
   const prog = _getOrCreate_(SHEET_PROGRAMAS);
+
   const hist = _getOrCreate_(SHEET_HISTORIAL_PAGOS);
   const arc  = _getOrCreate_(SHEET_ARCHIVO_REC);
   const cat2 = _getOrCreate_(SHEET_CATALOGO_PROD);
@@ -1570,13 +1572,25 @@ function cerrarQuincenaActual() {
     // Marcar quincena como Cerrada
     shP.getRange(filaActiva, 5).setValue("Cerrado");
 
-    // Crear siguiente quincena
+    // Calcular siguiente quincena
     const nuevaInicio = new Date(fechaFinActiva);
     nuevaInicio.setDate(nuevaInicio.getDate() + 1);
     const nuevaFin = new Date(nuevaInicio);
     nuevaFin.setDate(nuevaFin.getDate() + 14);
     const nombreNueva = _formatNombreQuincena_(nuevaInicio, nuevaFin);
-    const nextNum     = shP.getLastRow();
+
+    // ── Detectar fin de mes ────────────────────────────────────────────────────
+    // Si la nueva quincena empieza en un mes diferente al que terminó → fin de mes
+    const esCambioMes = nuevaInicio.getMonth() !== fechaFinActiva.getMonth()
+                     || nuevaInicio.getFullYear() !== fechaFinActiva.getFullYear();
+
+    if (esCambioMes) {
+      // Cierre de mes automático: guardar Drive + limpiar Archivo_Recepciones
+      _ejecutarCierreMes_(ss, false); // false = no pedir confirmación, ya se confirmó arriba
+    }
+
+    // Abrir la nueva quincena
+    const nextNum = shP.getLastRow();
     shP.appendRow([nextNum, nombreNueva, nuevaInicio, nuevaFin, "Activo", ""]);
     shP.getRange(shP.getLastRow(), 3, 1, 2).setNumberFormat("yyyy-mm-dd");
 
@@ -1589,7 +1603,6 @@ function cerrarQuincenaActual() {
         newRow[mRec["notas / calidad"] - 1] = notaActual ? notaActual + " (arrastrado)" : "(arrastrado)";
         rec.appendRow(newRow);
       }
-      // Re-numerar columna #
       for (let r = DATA_START_ROW; r <= rec.getLastRow(); r++) {
         if (rec.getRange(r, mRec["participante"]).getValue()) {
           rec.getRange(r, mRec["#"]).setValue(r - DATA_START_ROW + 1);
@@ -1598,8 +1611,10 @@ function cerrarQuincenaActual() {
     }
 
     actualizarHistorialQuincenas();
-    const msg = "✅ Quincena cerrada." + (filasPendient.length > 0 ? " " + filasPendient.length + " pendientes arrastrados." : "") + " Nueva: " + nombreNueva;
-    ss.toast(msg, null, 6);
+
+    const partesMes = esCambioMes ? " 🗓️ Mes cerrado y guardado en Drive." : "";
+    const partesPend = filasPendient.length > 0 ? ` ${filasPendient.length} pendiente(s) arrastrado(s).` : "";
+    ss.toast(`✅ Quincena cerrada.${partesPend}${partesMes} Nueva: ${nombreNueva}`, null, 8);
   } catch (e) {
     SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
   }
@@ -1696,38 +1711,49 @@ function actualizarHistorialQuincenas() {
 
 // ========================= CIERRE DE MES =========================
 
+// Llamado manual desde el menú (pide confirmación)
 function cerrarMes() {
   try {
     const ss = SpreadsheetApp.getActive();
     const ui = SpreadsheetApp.getUi();
-
     const ok = ui.alert(
-      "🗓️ Cierre de mes",
-      "Esto hará:\n  1. Guardar copia del archivo en Drive\n  2. Limpiar Recepciones (cabeceras intactas)\n  3. Limpiar Archivo_Recepciones\n\n⚠️ Historial_Pagos NUNCA se borra.\n\n¿Continuar?",
+      "🗓️ Cierre de mes manual",
+      "Guardará copia en Drive y limpiará Recepciones y Archivo_Recepciones.\n⚠️ Historial_Pagos NUNCA se borra.\n\n¿Continuar?",
       ui.ButtonSet.YES_NO
     );
     if (ok !== ui.Button.YES) return;
-
-    const hoy   = new Date();
-    const meses = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-    const sufijo = meses[hoy.getMonth()] + hoy.getFullYear();
-    const nombre = "Manufactura_" + NOMBRE_PROGRAMA.replace(/ /g, "_") + "_" + sufijo;
-
-    DriveApp.getFileById(ss.getId()).makeCopy(nombre);
-
-    const rec = ss.getSheetByName(SHEET_RECEPCIONES);
-    if (rec && rec.getLastRow() >= DATA_START_ROW) {
-      rec.deleteRows(DATA_START_ROW, rec.getLastRow() - DATA_START_ROW + 1);
-    }
-
-    const arc = ss.getSheetByName(SHEET_ARCHIVO_REC);
-    if (arc && arc.getLastRow() > 1) {
-      arc.deleteRows(2, arc.getLastRow() - 1);
-    }
-
-    ss.toast("✅ Copia guardada en Drive: '" + nombre + "'. Hojas limpiadas.", null, 8);
+    _ejecutarCierreMes_(ss, true);
   } catch (e) {
     SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
+  }
+}
+
+// Lógica real del cierre — llamada automáticamente desde cerrarQuincenaActual o manual desde cerrarMes
+function _ejecutarCierreMes_(ss, mostrarToast) {
+  const hoy   = new Date();
+  const meses = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  const sufijo = meses[hoy.getMonth()] + hoy.getFullYear();
+  const nombre = "Manufactura_" + NOMBRE_PROGRAMA.replace(/ /g, "_") + "_" + sufijo;
+
+  // Guardar copia en Drive
+  DriveApp.getFileById(ss.getId()).makeCopy(nombre);
+
+  // Limpiar Recepciones (las filas ya fueron borradas al cerrar quincena, pero por si acaso)
+  const rec = ss.getSheetByName(SHEET_RECEPCIONES);
+  if (rec && rec.getLastRow() >= DATA_START_ROW) {
+    rec.deleteRows(DATA_START_ROW, rec.getLastRow() - DATA_START_ROW + 1);
+  }
+
+  // Limpiar Archivo_Recepciones (ya tiene todo guardado en Drive)
+  const arc = ss.getSheetByName(SHEET_ARCHIVO_REC);
+  if (arc && arc.getLastRow() > 1) {
+    arc.deleteRows(2, arc.getLastRow() - 1);
+  }
+
+  // Historial_Pagos, Cheques y Transferencias NUNCA se limpian — son registros permanentes
+
+  if (mostrarToast) {
+    ss.toast("✅ Mes cerrado. Copia en Drive: '" + nombre + "'. Hojas limpiadas.", null, 8);
   }
 }
 
