@@ -6,20 +6,30 @@
 
 const NOMBRE_PROGRAMA = "NOMBRE DEL PROGRAMA";
 
-const SHEET_RECEPCIONES  = "Recepciones";
-const SHEET_CATALOGOS    = "Participantes Activos";
-const SHEET_INACTIVOS    = "Participantes Inactivos";
-const SHEET_RESUMEN_PART = "Resumen Participantes";
-const SHEET_RESUMEN_MENS = "Resumen Mensual";
-const SHEET_PAGOS_PEND   = "Pagos Pendientes";
-const SHEET_DASHBOARD    = "Dashboard";
-const SHEET_REPORTES     = "Reportes PowerBI";
+// ── Hojas existentes ──────────────────────────────────────────────────────────
+const SHEET_RECEPCIONES   = "Recepciones";
+const SHEET_CATALOGOS     = "Participantes Activos";
+const SHEET_INACTIVOS     = "Participantes Inactivos";
+const SHEET_RESUMEN_PART  = "Resumen Participantes";
+const SHEET_RESUMEN_MENS  = "Resumen Mensual";   // conservado para limpiar instalaciones antiguas
+const SHEET_PAGOS_PEND    = "Pagos Pendientes";
+const SHEET_DASHBOARD     = "Dashboard";
+const SHEET_REPORTES      = "Reportes PowerBI";
 
-const HEADER_ROW   = 4;
+// ── Hojas nuevas (Mejoras 1-4) ────────────────────────────────────────────────
+const SHEET_PERIODOS        = "PERIODOS";
+const SHEET_HIST_QUINCENAS  = "Historial Quincenas";   // reemplaza Resumen Mensual
+const SHEET_CHEQUES         = "Cheques";
+const SHEET_TRANSFERENCIAS  = "Transferencias";
+const SHEET_PROGRAMAS       = "Programas_Participacion";
+const SHEET_HISTORIAL_PAGOS = "Historial_Pagos";
+
+const HEADER_ROW     = 4;
 const DATA_START_ROW = 5;
 
+// ── Mejora 1: Quincena insertada entre Fecha entrega y Participante ───────────
 const RECEPCIONES_HEADERS = [
-  "#", "Fecha entrega", "Participante", "Creamos ID", "Proyecto / Cliente", "Producto",
+  "#", "Fecha entrega", "Quincena", "Participante", "Creamos ID", "Proyecto / Cliente", "Producto",
   "Unidades buenas", "Unidades rechazadas", "Precio unit. (Q)", "Total Q",
   "Estado pago", "Fecha pago", "Método pago", "Comprobante", "Notas / calidad"
 ];
@@ -50,9 +60,12 @@ function onOpen() {
       .addItem("✏️ Editar fila seleccionada",  "editarFilaSeleccionada")
       .addItem("✅ Marcar fila como pagada",   "marcarFilaPagada")
       .addSeparator()
+      .addItem("📅 Cerrar quincena actual",       "cerrarQuincenaActual")
+      .addItem("📋 Actualizar participación",      "actualizarParticipacionProgramas")
+      .addSeparator()
       .addItem("🔄 Actualizar todo", "actualizarTodo")
       .addSeparator()
-      .addItem("⏱️ Crear triggers",   "crearTriggers")
+      .addItem("⏱️ Crear triggers",    "crearTriggers")
       .addItem("⏹️ Eliminar triggers", "eliminarTriggers")
       .addToUi();
   } catch (e) {
@@ -91,7 +104,9 @@ function desinstalarSistema() {
     const ss = SpreadsheetApp.getActive();
     [
       SHEET_RECEPCIONES, SHEET_CATALOGOS, SHEET_INACTIVOS,
-      SHEET_RESUMEN_PART, SHEET_RESUMEN_MENS, SHEET_PAGOS_PEND, SHEET_DASHBOARD, SHEET_REPORTES
+      SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS, SHEET_RESUMEN_MENS, SHEET_PAGOS_PEND,
+      SHEET_DASHBOARD, SHEET_REPORTES,
+      SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_PROGRAMAS, SHEET_HISTORIAL_PAGOS
     ].forEach(n => {
       const sh = ss.getSheetByName(n);
       if (sh) ss.deleteSheet(sh);
@@ -108,7 +123,8 @@ function _crearEstructura_(recrear) {
   const ss = SpreadsheetApp.getActive();
   const hojasSistema = [
     SHEET_RECEPCIONES, SHEET_CATALOGOS, SHEET_INACTIVOS,
-    SHEET_RESUMEN_PART, SHEET_RESUMEN_MENS, SHEET_PAGOS_PEND, SHEET_DASHBOARD, SHEET_REPORTES
+    SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS, SHEET_PAGOS_PEND, SHEET_DASHBOARD, SHEET_REPORTES,
+    SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_PROGRAMAS, SHEET_HISTORIAL_PAGOS
   ];
 
   if (recrear) {
@@ -118,34 +134,46 @@ function _crearEstructura_(recrear) {
     });
   }
 
-  const rec = _getOrCreate_(SHEET_RECEPCIONES);
-  const cat = _getOrCreate_(SHEET_CATALOGOS);
-  const ina = _getOrCreate_(SHEET_INACTIVOS);
-  const rp  = _getOrCreate_(SHEET_RESUMEN_PART);
-  const rm  = _getOrCreate_(SHEET_RESUMEN_MENS);
-  const pp  = _getOrCreate_(SHEET_PAGOS_PEND);
-  const db  = _getOrCreate_(SHEET_DASHBOARD);
-  const rep = _getOrCreate_(SHEET_REPORTES);
+  const rec  = _getOrCreate_(SHEET_RECEPCIONES);
+  const cat  = _getOrCreate_(SHEET_CATALOGOS);
+  const ina  = _getOrCreate_(SHEET_INACTIVOS);
+  const rp   = _getOrCreate_(SHEET_RESUMEN_PART);
+  const hq   = _getOrCreate_(SHEET_HIST_QUINCENAS);
+  const pp   = _getOrCreate_(SHEET_PAGOS_PEND);
+  const db   = _getOrCreate_(SHEET_DASHBOARD);
+  const rep  = _getOrCreate_(SHEET_REPORTES);
+  const per  = _getOrCreate_(SHEET_PERIODOS);
+  const chq  = _getOrCreate_(SHEET_CHEQUES);
+  const tra  = _getOrCreate_(SHEET_TRANSFERENCIAS);
+  const prog = _getOrCreate_(SHEET_PROGRAMAS);
+  const hist = _getOrCreate_(SHEET_HISTORIAL_PAGOS);
 
   _setupRecepciones_(rec);
   _setupCatalogos_(cat);
   _setupInactivos_(ina);
   _setupResumen_(rp, "RESUMEN POR PARTICIPANTE");
-  _setupResumen_(rm, "RESUMEN MENSUAL");
+  _setupHistorialQuincenas_(hq);
   _setupPagosPendientes_(pp);
   _setupDashboard_(db);
   _setupReportes_(rep);
+  _setupPeriodos_(per);
+  _setupCheques_(chq);
+  _setupTransferencias_(tra);
+  _setupProgramas_(prog);
+  _setupHistorialPagos_(hist);
 
   crearValidacionesDatos();
   actualizarTodo();
 }
 
 
+// ========================= SETUP DE HOJAS =========================
+
 function _setupRecepciones_(sh) {
   sh.clear();
   sh.clearFormats();
 
-  sh.getRange("A1:O1").merge().setValue("📦 REGISTRO DE RECEPCIONES")
+  sh.getRange("A1:P1").merge().setValue("📦 REGISTRO DE RECEPCIONES")
     .setFontWeight("bold").setFontSize(14).setBackground("#263238").setFontColor("white")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
   sh.setRowHeight(1, 28);
@@ -158,11 +186,13 @@ function _setupRecepciones_(sh) {
   sh.setFrozenRows(HEADER_ROW);
   sh.setRowHeight(HEADER_ROW, 30);
 
-  const widths = [45, 90, 150, 100, 160, 120, 100, 120, 90, 80, 80, 80, 100, 120, 150];
+  // 16 columnas: # | Fecha | Quincena | Participante | CreamosID | Proyecto | Producto |
+  //              UBuenas | URechaz | PrecioU | TotalQ | Estado | FechaPago | Metodo | Comprobante | Notas
+  const widths = [45, 90, 110, 150, 100, 160, 120, 100, 120, 90, 80, 80, 80, 100, 120, 150];
   widths.forEach((w, i) => sh.setColumnWidth(i + 1, w));
 
-  sh.getRange(`A${HEADER_ROW + 1}:O1000`).setBackground("#ffffff").setFontColor("#212121");
-  sh.getRange(`A${HEADER_ROW + 1}:O1000`).setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange(`A${HEADER_ROW + 1}:P1000`).setBackground("#ffffff").setFontColor("#212121");
+  sh.getRange(`A${HEADER_ROW + 1}:P1000`).setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 }
 
 function _setupCatalogos_(sh) {
@@ -170,6 +200,11 @@ function _setupCatalogos_(sh) {
   sh.clearFormats();
 
   sh.getRange("A1:I1").setValues([["Creamos ID", "Nombre Completo", "Estado", "Nº Cuenta", "Tipo Cuenta", "Banco", "Titular", "DPI", "Email"]])
+    .setBackground("#263238").setFontColor("#ffffff").setFontWeight("bold")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+
+  // Mejora 3: col J = Programas (texto libre)
+  sh.getRange("J1").setValue("Programas")
     .setBackground("#263238").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
@@ -189,11 +224,12 @@ function _setupCatalogos_(sh) {
   sh.setColumnWidth(7, 150);
   sh.setColumnWidth(8, 110);
   sh.setColumnWidth(9, 150);
+  sh.setColumnWidth(10, 160);  // J – Programas
   sh.setColumnWidth(11, 150);
   sh.setColumnWidth(12, 100);
 
-  sh.getRange("A2:I1000").setBackground("#ffffff").setFontColor("#212121");
-  sh.getRange("A2:I1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("A2:J1000").setBackground("#ffffff").setFontColor("#212121");
+  sh.getRange("A2:J1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
   sh.getRange("K2:L1000").setBackground("#ffffff").setFontColor("#212121");
   sh.getRange("K2:L1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
@@ -214,7 +250,6 @@ function _setupCatalogos_(sh) {
   );
 }
 
-// FIX: _setupInactivos_ ahora conserva todas las columnas del catálogo activo (A:I)
 function _setupInactivos_(sh) {
   sh.clear();
   sh.clearFormats();
@@ -248,7 +283,6 @@ function _setupResumen_(sh, titulo) {
     .setBackground("#37474f").setFontColor("white");
 }
 
-// FIX: encabezado ahora coincide con las 11 columnas que escribe actualizarPagosPendientes
 function _setupPagosPendientes_(sh) {
   sh.clear();
   sh.clearFormats();
@@ -290,7 +324,7 @@ function _setupDashboard_(sh) {
   sh.setRowHeight(1, 28);
 
   sh.setColumnWidth(1, 120);
-  sh.setColumnWidth(2, 180);
+  sh.setColumnWidth(2, 200);
   sh.setColumnWidth(3, 150);
   sh.setColumnWidth(4, 120);
 }
@@ -312,31 +346,169 @@ function _setupReportes_(sh) {
   sh.setFrozenRows(2);
   sh.setRowHeight(2, 25);
 
-  sh.setColumnWidth(1, 100);
-  sh.setColumnWidth(2, 100);
-  sh.setColumnWidth(3, 110);
-  sh.setColumnWidth(4, 150);
-  sh.setColumnWidth(5, 120);
-  sh.setColumnWidth(6, 120);
-  sh.setColumnWidth(7, 120);
-  sh.setColumnWidth(8, 130);
-  sh.setColumnWidth(9, 120);
-  sh.setColumnWidth(10, 100);
-  sh.setColumnWidth(11, 120);
-  sh.setColumnWidth(12, 120);
+  sh.setColumnWidth(1, 100);  sh.setColumnWidth(2, 100);  sh.setColumnWidth(3, 110);
+  sh.setColumnWidth(4, 150);  sh.setColumnWidth(5, 120);  sh.setColumnWidth(6, 120);
+  sh.setColumnWidth(7, 120);  sh.setColumnWidth(8, 130);  sh.setColumnWidth(9, 120);
+  sh.setColumnWidth(10, 100); sh.setColumnWidth(11, 120); sh.setColumnWidth(12, 120);
   sh.setColumnWidth(13, 120);
+}
+
+// ── Mejora 1: PERIODOS ────────────────────────────────────────────────────────
+function _setupPeriodos_(sh) {
+  sh.clear();
+  sh.clearFormats();
+
+  sh.getRange("A1:F1").setValues([["#", "Nombre_Quincena", "Fecha_Inicio", "Fecha_Fin", "Estado", "Notas"]])
+    .setBackground("#1565c0").setFontColor("#ffffff").setFontWeight("bold")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.setFrozenRows(1);
+  sh.setRowHeight(1, 25);
+
+  sh.setColumnWidth(1, 50);  sh.setColumnWidth(2, 200); sh.setColumnWidth(3, 110);
+  sh.setColumnWidth(4, 110); sh.setColumnWidth(5, 100); sh.setColumnWidth(6, 220);
+
+  sh.getRange("C2:D1000").setNumberFormat("yyyy-mm-dd");
+  sh.getRange("E2:E1000").setDataValidation(
+    SpreadsheetApp.newDataValidation()
+      .requireValueInList(["Activo", "Cerrado"])
+      .setAllowInvalid(false)
+      .build()
+  );
+  sh.getRange("A2:F1000").setBackground("#ffffff").setFontColor("#212121");
+  sh.getRange("A2:F1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+}
+
+// ── Mejora 1: Historial Quincenas (reemplaza Resumen Mensual) ─────────────────
+function _setupHistorialQuincenas_(sh) {
+  sh.clear();
+  sh.clearFormats();
+
+  sh.getRange("A1").setValue("HISTORIAL DE QUINCENAS").setFontWeight("bold").setFontSize(12)
+    .setBackground("#37474f").setFontColor("white");
+
+  sh.getRange("A2:J2").setValues([[
+    "Quincena", "Fecha_Inicio", "Fecha_Fin", "Entregas", "Unidades_Buenas",
+    "Unidades_Rechazadas", "Total_Q", "Participantes_Con_Entrega",
+    "Participantes_Sin_Entrega", "Notas"
+  ]])
+    .setFontWeight("bold").setBackground("#455a64").setFontColor("white")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.setFrozenRows(2);
+  sh.setRowHeight(2, 25);
+
+  sh.setColumnWidth(1, 210); sh.setColumnWidth(2, 110);  sh.setColumnWidth(3, 110);
+  sh.setColumnWidth(4, 90);  sh.setColumnWidth(5, 130);  sh.setColumnWidth(6, 150);
+  sh.setColumnWidth(7, 110); sh.setColumnWidth(8, 180);  sh.setColumnWidth(9, 180);
+  sh.setColumnWidth(10, 220);
+}
+
+// ── Mejora 2: CHEQUES ─────────────────────────────────────────────────────────
+function _setupCheques_(sh) {
+  sh.clear();
+  sh.clearFormats();
+
+  sh.getRange("A1:I1").setValues([[
+    "Quincena", "Participante", "Creamos_ID", "Nº_Cheque",
+    "Banco", "Total_Q", "Fecha_Entrega", "Estado", "Notas"
+  ]])
+    .setBackground("#4a148c").setFontColor("#ffffff").setFontWeight("bold")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.setFrozenRows(1);
+  sh.setRowHeight(1, 25);
+
+  sh.setColumnWidth(1, 200); sh.setColumnWidth(2, 170); sh.setColumnWidth(3, 110);
+  sh.setColumnWidth(4, 120); sh.setColumnWidth(5, 140); sh.setColumnWidth(6, 110);
+  sh.setColumnWidth(7, 130); sh.setColumnWidth(8, 110); sh.setColumnWidth(9, 200);
+
+  sh.getRange("F2:F1000").setNumberFormat('"Q " #,##0.00');
+  sh.getRange("G2:G1000").setNumberFormat("yyyy-mm-dd");
+  sh.getRange("A2:I1000").setBackground("#fff8ff").setFontColor("#212121");
+  sh.getRange("A2:I1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+}
+
+// ── Mejora 2: TRANSFERENCIAS ──────────────────────────────────────────────────
+function _setupTransferencias_(sh) {
+  sh.clear();
+  sh.clearFormats();
+
+  sh.getRange("A1:L1").setValues([[
+    "Quincena", "Participante", "Creamos_ID", "Nº_Cuenta",
+    "Tipo_Cuenta", "Banco", "Titular", "Total_Q",
+    "Fecha_Transferencia", "Comprobante", "Estado", "Notas"
+  ]])
+    .setBackground("#006064").setFontColor("#ffffff").setFontWeight("bold")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.setFrozenRows(1);
+  sh.setRowHeight(1, 25);
+
+  sh.setColumnWidth(1, 200);  sh.setColumnWidth(2, 170);  sh.setColumnWidth(3, 110);
+  sh.setColumnWidth(4, 140);  sh.setColumnWidth(5, 140);  sh.setColumnWidth(6, 140);
+  sh.setColumnWidth(7, 160);  sh.setColumnWidth(8, 110);  sh.setColumnWidth(9, 150);
+  sh.setColumnWidth(10, 130); sh.setColumnWidth(11, 120); sh.setColumnWidth(12, 200);
+
+  sh.getRange("H2:H1000").setNumberFormat('"Q " #,##0.00');
+  sh.getRange("I2:I1000").setNumberFormat("yyyy-mm-dd");
+  sh.getRange("A2:L1000").setBackground("#f0fdfd").setFontColor("#212121");
+  sh.getRange("A2:L1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+}
+
+// ── Mejora 3: PROGRAMAS_PARTICIPACION ────────────────────────────────────────
+function _setupProgramas_(sh) {
+  sh.clear();
+  sh.clearFormats();
+
+  sh.getRange("A1:H1").setValues([[
+    "Creamos_ID", "Participante", "Manufactura", "mi_eelo", "Textil", "Otro_1", "Otro_2", "Notas"
+  ]])
+    .setBackground("#2e7d32").setFontColor("#ffffff").setFontWeight("bold")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.setFrozenRows(1);
+  sh.setRowHeight(1, 25);
+
+  sh.setColumnWidth(1, 110); sh.setColumnWidth(2, 190); sh.setColumnWidth(3, 110);
+  sh.setColumnWidth(4, 100); sh.setColumnWidth(5, 90);  sh.setColumnWidth(6, 90);
+  sh.setColumnWidth(7, 90);  sh.setColumnWidth(8, 220);
+
+  sh.getRange("C2:G1000").insertCheckboxes();
+  sh.getRange("A2:H1000").setBackground("#f1f8e9").setFontColor("#212121");
+  sh.getRange("A2:H1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+}
+
+// ── Mejora 4: HISTORIAL_PAGOS ─────────────────────────────────────────────────
+function _setupHistorialPagos_(sh) {
+  sh.clear();
+  sh.clearFormats();
+
+  sh.getRange("A1:J1").setValues([[
+    "Fecha_Pago", "Quincena", "Participante", "Creamos_ID",
+    "Producto", "Unidades", "Total_Q", "Método_Pago", "Referencia", "Notas"
+  ]])
+    .setBackground("#37474f").setFontColor("#ffffff").setFontWeight("bold")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.setFrozenRows(1);
+  sh.setRowHeight(1, 25);
+
+  sh.setColumnWidth(1, 110); sh.setColumnWidth(2, 200); sh.setColumnWidth(3, 170);
+  sh.setColumnWidth(4, 110); sh.setColumnWidth(5, 140); sh.setColumnWidth(6, 90);
+  sh.setColumnWidth(7, 110); sh.setColumnWidth(8, 130); sh.setColumnWidth(9, 140);
+  sh.setColumnWidth(10, 200);
+
+  sh.getRange("A2:A1000").setNumberFormat("yyyy-mm-dd");
+  sh.getRange("G2:G1000").setNumberFormat('"Q " #,##0.00');
+  sh.getRange("A2:J1000").setBackground("#fafafa").setFontColor("#212121");
+  sh.getRange("A2:J1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 }
 
 
 // ========================= CAPTURA RAPIDA =========================
 function agregarEntregaRapida() {
   try {
-    const ss = SpreadsheetApp.getActive();
+    const ss  = SpreadsheetApp.getActive();
     const cat = ss.getSheetByName(SHEET_CATALOGOS);
 
     const participantes = cat.getRange("B2:B1000").getValues().flat().filter(x => x);
-    const proyectos = _obtenerHistorico_("proyectos");
-    const metodos  = _obtenerHistorico_("metodos");
+    const proyectos     = _obtenerHistorico_("proyectos");
+    const metodos       = _obtenerHistorico_("metodos");
 
     const dataCat = cat.getDataRange().getValues();
     const productosConPrecio = [];
@@ -357,29 +529,22 @@ function agregarEntregaRapida() {
         body {
           font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
           background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          padding: 20px;
-          min-height: 100vh;
+          padding: 20px; min-height: 100vh;
         }
         .container {
-          max-width: 500px;
-          margin: 0 auto;
-          background: white;
-          border-radius: 12px;
-          box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-          padding: 30px;
+          max-width: 500px; margin: 0 auto; background: white;
+          border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); padding: 30px;
         }
         h1 { color: #333; margin-bottom: 8px; font-size: 24px; }
         .subtitle { color: #888; font-size: 13px; margin-bottom: 25px; }
         .form-group { margin-bottom: 18px; }
         label {
-          display: block; color: #555; font-weight: 600;
-          margin-bottom: 6px; font-size: 13px;
-          text-transform: uppercase; letter-spacing: 0.5px;
+          display: block; color: #555; font-weight: 600; margin-bottom: 6px;
+          font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;
         }
         select, input {
-          width: 100%; padding: 10px 12px;
-          border: 2px solid #e0e0e0; border-radius: 6px;
-          font-size: 14px; transition: all 0.3s; font-family: inherit;
+          width: 100%; padding: 10px 12px; border: 2px solid #e0e0e0;
+          border-radius: 6px; font-size: 14px; transition: all 0.3s; font-family: inherit;
         }
         select:focus, input:focus {
           outline: none; border-color: #667eea;
@@ -395,15 +560,14 @@ function agregarEntregaRapida() {
         .resumen-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
         .resumen-row:last-child {
           margin-bottom: 0; border-top: 1px solid #ddd;
-          padding-top: 8px; margin-top: 8px;
-          font-weight: 600; color: #667eea;
+          padding-top: 8px; margin-top: 8px; font-weight: 600; color: #667eea;
         }
         .total-q { color: #d32f2f; font-weight: bold; }
         .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 25px; }
         button {
-          padding: 12px; border: none; border-radius: 6px;
-          font-size: 14px; font-weight: 600; cursor: pointer;
-          transition: all 0.3s; text-transform: uppercase; letter-spacing: 0.5px;
+          padding: 12px; border: none; border-radius: 6px; font-size: 14px;
+          font-weight: 600; cursor: pointer; transition: all 0.3s;
+          text-transform: uppercase; letter-spacing: 0.5px;
         }
         .btn-guardar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
         .btn-guardar:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(102, 126, 234, 0.3); }
@@ -474,25 +638,15 @@ function agregarEntregaRapida() {
         </div>
 
         <div class="resumen" id="resumen" style="display:none;">
-          <div class="resumen-row">
-            <span>Unidades Buenas:</span>
-            <span id="res-buenas">0</span>
-          </div>
-          <div class="resumen-row">
-            <span>Precio Unitario:</span>
-            <span>Q <span id="res-precio">0.00</span></span>
-          </div>
-          <div class="resumen-row">
-            <span>Total a Pagar:</span>
-            <span class="total-q">Q <span id="res-total">0.00</span></span>
-          </div>
+          <div class="resumen-row"><span>Unidades Buenas:</span><span id="res-buenas">0</span></div>
+          <div class="resumen-row"><span>Precio Unitario:</span><span>Q <span id="res-precio">0.00</span></span></div>
+          <div class="resumen-row"><span>Total a Pagar:</span><span class="total-q">Q <span id="res-total">0.00</span></span></div>
         </div>
 
         <div class="buttons">
           <button class="btn-guardar" onclick="guardarEntrega()">✅ Guardar</button>
           <button class="btn-cancelar" onclick="google.script.host.close()">❌ Cancelar</button>
         </div>
-
         <div class="loading" id="loading">Guardando entrega...</div>
       </div>
 
@@ -518,14 +672,10 @@ function agregarEntregaRapida() {
           const buenas = Number(document.getElementById('buenas').value) || 0;
           const precio = Number(document.getElementById('precio').value) || 0;
           const total  = buenas * precio;
-
           document.getElementById('res-buenas').textContent = buenas;
           document.getElementById('res-precio').textContent = precio.toFixed(2);
           document.getElementById('res-total').textContent  = total.toFixed(2);
-
-          if (buenas > 0 || precio > 0) {
-            document.getElementById('resumen').style.display = 'block';
-          }
+          if (buenas > 0 || precio > 0) document.getElementById('resumen').style.display = 'block';
         }
 
         function validar() {
@@ -545,10 +695,7 @@ function agregarEntregaRapida() {
         }
 
         function guardarEntrega() {
-          if (!validar()) {
-            alert('⚠️ Por favor completa todos los campos requeridos');
-            return;
-          }
+          if (!validar()) { alert('⚠️ Por favor completa todos los campos requeridos'); return; }
           const btn = document.querySelector('.btn-guardar');
           btn.disabled = true;
           btn.style.opacity = '0.5';
@@ -592,7 +739,8 @@ function guardarEntregaServer(participante, producto, proyecto, buenas, rechazad
     const cat = ss.getSheetByName(SHEET_CATALOGOS);
     const m   = _headerMap_(sh);
     const row = Math.max(sh.getLastRow() + 1, DATA_START_ROW);
-    const total = buenas * precio;
+    const total    = buenas * precio;
+    const quincena = _obtenerQuincenaActiva_(); // Mejora 1
 
     let creamosID = "";
     if (cat) {
@@ -607,6 +755,7 @@ function guardarEntregaServer(participante, producto, proyecto, buenas, rechazad
 
     sh.getRange(row, m["#"]).setValue(row - DATA_START_ROW + 1);
     sh.getRange(row, m["fecha entrega"]).setValue(new Date());
+    sh.getRange(row, m["quincena"]).setValue(quincena);           // Mejora 1
     sh.getRange(row, m["participante"]).setValue(participante || "");
     sh.getRange(row, m["creamos id"]).setValue(creamosID);
     sh.getRange(row, m["proyecto / cliente"]).setValue(proyecto || "");
@@ -616,9 +765,7 @@ function guardarEntregaServer(participante, producto, proyecto, buenas, rechazad
     sh.getRange(row, m["precio unit. (q)"]).setValue(precio || 0);
     sh.getRange(row, m["total q"]).setValue(total || 0);
     sh.getRange(row, m["estado pago"]).setValue("Pendiente");
-    if (metodo && metodo.length > 0) {
-      sh.getRange(row, m["método pago"]).setValue(metodo);
-    }
+    if (metodo && metodo.length > 0) sh.getRange(row, m["método pago"]).setValue(metodo);
 
     _guardarHistorico_("productos", producto);
     _guardarHistorico_("proyectos", proyecto);
@@ -685,10 +832,24 @@ function marcarFilaPagada() {
     const row = sh.getActiveRange().getRow();
     if (row < DATA_START_ROW) return SpreadsheetApp.getUi().alert("Selecciona una fila de datos (desde fila 5).");
 
-    const m = _headerMap_(sh);
+    const m   = _headerMap_(sh);
+    const hoy = new Date();
+
     sh.getRange(row, m["estado pago"]).setValue("Pagado");
-    sh.getRange(row, m["fecha pago"]).setValue(new Date());
+    sh.getRange(row, m["fecha pago"]).setValue(hoy);
     if (!sh.getRange(row, m["método pago"]).getValue()) sh.getRange(row, m["método pago"]).setValue("Efectivo");
+
+    // Mejora 4: registrar en Historial_Pagos
+    const rowData    = sh.getRange(row, 1, 1, sh.getLastColumn()).getValues()[0];
+    const metodo     = String(rowData[m["método pago"]      - 1] || "Efectivo").trim();
+    const quincena   = String(rowData[m["quincena"]         - 1] || "").trim();
+    const participante = String(rowData[m["participante"]   - 1] || "").trim();
+    const creamosID  = String(rowData[m["creamos id"]       - 1] || "").trim();
+    const producto   = String(rowData[m["producto"]         - 1] || "").trim();
+    const ub         = Number(rowData[m["unidades buenas"]  - 1]) || 0;
+    const tq         = Number(rowData[m["total q"]          - 1]) || 0;
+
+    _appendHistorialPago_(participante, { quincena, creamosID, producto, ub, tq, metodo }, hoy);
 
     actualizarTodo();
   } catch (e) {
@@ -702,7 +863,7 @@ function actualizarTodo() {
   actualizarEstadoPagosAutomatico();
   procesarParticipantesInactivos();
   actualizarResumenParticipantes();
-  actualizarResumenMensual();
+  actualizarHistorialQuincenas();      // Mejora 1 (reemplaza actualizarResumenMensual en el ciclo)
   actualizarPagosPendientes();
   aplicarColoresAutomaticos();
   actualizarDashboard();
@@ -737,10 +898,10 @@ function actualizarEstadoPagosAutomatico() {
 
 // ========================= RESUMENES =========================
 function actualizarResumenParticipantes() {
-  const ss  = SpreadsheetApp.getActive();
-  const src = ss.getSheetByName(SHEET_RECEPCIONES);
-  const dst = ss.getSheetByName(SHEET_RESUMEN_PART);
-  const m   = _headerMap_(src);
+  const ss   = SpreadsheetApp.getActive();
+  const src  = ss.getSheetByName(SHEET_RECEPCIONES);
+  const dst  = ss.getSheetByName(SHEET_RESUMEN_PART);
+  const m    = _headerMap_(src);
   const data = src.getDataRange().getValues();
 
   const acc = {};
@@ -779,20 +940,18 @@ function actualizarResumenParticipantes() {
     dst.getRange(3, 6, rows.length, 1).setNumberFormat('"Q " #,##0.00');
   }
 
-  dst.setColumnWidth(1, 150);
-  dst.setColumnWidth(2, 100);
-  dst.setColumnWidth(3, 120);
-  dst.setColumnWidth(4, 130);
-  dst.setColumnWidth(5, 120);
-  dst.setColumnWidth(6, 100);
+  dst.setColumnWidth(1, 150); dst.setColumnWidth(2, 100); dst.setColumnWidth(3, 120);
+  dst.setColumnWidth(4, 130); dst.setColumnWidth(5, 120); dst.setColumnWidth(6, 100);
   dst.setColumnWidth(7, 130);
 }
 
+// Conservada para compatibilidad — ya no se llama desde actualizarTodo
 function actualizarResumenMensual() {
-  const ss  = SpreadsheetApp.getActive();
-  const src = ss.getSheetByName(SHEET_RECEPCIONES);
-  const dst = ss.getSheetByName(SHEET_RESUMEN_MENS);
-  const m   = _headerMap_(src);
+  const ss   = SpreadsheetApp.getActive();
+  const src  = ss.getSheetByName(SHEET_RECEPCIONES);
+  const dst  = ss.getSheetByName(SHEET_RESUMEN_MENS);
+  if (!src || !dst) return;
+  const m    = _headerMap_(src);
   const data = src.getDataRange().getValues();
 
   const byMonth = {};
@@ -805,11 +964,9 @@ function actualizarResumenMensual() {
     const key = Utilities.formatDate(f, Session.getScriptTimeZone(), "yyyy-MM");
 
     if (!byMonth[key]) byMonth[key] = { reg: 0, b: 0, re: 0, q: 0, p: {} };
-
     const ub = Number(r[m["unidades buenas"]    - 1]) || 0;
     const ur = Number(r[m["unidades rechazadas"] - 1]) || 0;
     const tq = Number(r[m["total q"]            - 1]) || 0;
-
     byMonth[key].reg++;
     byMonth[key].b  += ub;
     byMonth[key].re += ur;
@@ -820,7 +977,6 @@ function actualizarResumenMensual() {
   dst.clear();
   dst.getRange("A1").setValue("RESUMEN MENSUAL").setFontWeight("bold").setFontSize(12)
     .setBackground("#37474f").setFontColor("white");
-
   dst.getRange(3, 1, 1, 7).setValues([["Mes","Registros","Unidades buenas","Unidades rechazadas","Tasa rechazo %","Total Q","Top 3 participantes"]])
     .setFontWeight("bold").setBackground("#455a64").setFontColor("white").setHorizontalAlignment("center");
   dst.setRowHeight(3, 25);
@@ -840,25 +996,17 @@ function actualizarResumenMensual() {
     dst.getRange(4, 5, out.length, 1).setNumberFormat("0.00%");
     dst.getRange(4, 6, out.length, 1).setNumberFormat('"Q " #,##0.00');
   }
-
-  dst.setColumnWidth(1, 100);
-  dst.setColumnWidth(2, 100);
-  dst.setColumnWidth(3, 120);
-  dst.setColumnWidth(4, 130);
-  dst.setColumnWidth(5, 120);
-  dst.setColumnWidth(6, 100);
-  dst.setColumnWidth(7, 180);
 }
 
 function actualizarPagosPendientes() {
-  const ss     = SpreadsheetApp.getActive();
-  const src    = ss.getSheetByName(SHEET_RECEPCIONES);
-  const catAct = ss.getSheetByName(SHEET_CATALOGOS);
-  const dst    = ss.getSheetByName(SHEET_PAGOS_PEND);
-  const m      = _headerMap_(src);
-  const data   = src.getDataRange().getValues();
+  const ss      = SpreadsheetApp.getActive();
+  const src     = ss.getSheetByName(SHEET_RECEPCIONES);
+  const catAct  = ss.getSheetByName(SHEET_CATALOGOS);
+  const dst     = ss.getSheetByName(SHEET_PAGOS_PEND);
+  const m       = _headerMap_(src);
+  const data    = src.getDataRange().getValues();
   const dataCat = catAct.getDataRange().getValues();
-  const hoy    = new Date();
+  const hoy     = new Date();
 
   const pendientes = [];
   for (let i = DATA_START_ROW - 1; i < data.length; i++) {
@@ -925,32 +1073,23 @@ function actualizarPagosPendientes() {
     }
   }
 
-  dst.setColumnWidth(1, 150);
-  dst.setColumnWidth(2, 100);
-  dst.setColumnWidth(3, 100);
-  dst.setColumnWidth(4, 120);
-  dst.setColumnWidth(5, 120);
-  dst.setColumnWidth(6, 90);
-  dst.setColumnWidth(7, 100);
-  dst.setColumnWidth(8, 110);
-  dst.setColumnWidth(9, 130);
-  dst.setColumnWidth(10, 120);
-  dst.setColumnWidth(11, 140);
+  dst.setColumnWidth(1, 150); dst.setColumnWidth(2, 100); dst.setColumnWidth(3, 100);
+  dst.setColumnWidth(4, 120); dst.setColumnWidth(5, 120); dst.setColumnWidth(6, 90);
+  dst.setColumnWidth(7, 100); dst.setColumnWidth(8, 110); dst.setColumnWidth(9, 130);
+  dst.setColumnWidth(10, 120); dst.setColumnWidth(11, 140);
 }
 
-// FIX: ahora copia todas las 9 columnas (incluyendo datos bancarios) al mover a inactivos
 function procesarParticipantesInactivos() {
   const ss    = SpreadsheetApp.getActive();
   const shAct = ss.getSheetByName(SHEET_CATALOGOS);
   const shIna = ss.getSheetByName(SHEET_INACTIVOS);
   if (!shAct || !shIna) return;
 
-  const data         = shAct.getDataRange().getValues();
+  const data          = shAct.getDataRange().getValues();
   const rowsAEliminar = [];
 
   for (let i = data.length - 1; i >= 1; i--) {
     if (data[i][CAT_COL.ESTADO] === "Inactivo") {
-      // Copia las 9 columnas completas: ID, Nombre, Estado, Cuenta, Tipo, Banco, Titular, DPI, Email
       shIna.appendRow(data[i].slice(0, 9));
       rowsAEliminar.push(i + 1);
     }
@@ -974,29 +1113,30 @@ function aplicarColoresAutomaticos() {
     const fe     = new Date(r[m["fecha entrega"] - 1]);
     const dias   = isNaN(fe) ? 0 : Math.floor((hoy - fe) / (1000 * 60 * 60 * 24));
     const rowNum = i + 1;
+    const ncols  = RECEPCIONES_HEADERS.length;
 
     if (estado === "Pagado") {
-      sh.getRange(rowNum, 1, 1, 15).setBackground("#c8e6c9").setFontColor("#1b5e20").setFontWeight("bold");
+      sh.getRange(rowNum, 1, 1, ncols).setBackground("#c8e6c9").setFontColor("#1b5e20").setFontWeight("bold");
     } else if (estado === "Pendiente") {
       if (dias > 14) {
-        sh.getRange(rowNum, 1, 1, 15).setBackground("#ffebee").setFontColor("#c62828").setFontWeight("bold");
+        sh.getRange(rowNum, 1, 1, ncols).setBackground("#ffebee").setFontColor("#c62828").setFontWeight("bold");
       } else {
-        sh.getRange(rowNum, 1, 1, 15).setBackground("#fff9c4").setFontColor("#f57f17");
+        sh.getRange(rowNum, 1, 1, ncols).setBackground("#fff9c4").setFontColor("#f57f17");
       }
     } else {
-      sh.getRange(rowNum, 1, 1, 15).setBackground("#ffffff").setFontColor("#212121");
+      sh.getRange(rowNum, 1, 1, ncols).setBackground("#ffffff").setFontColor("#212121");
     }
 
-    sh.getRange(rowNum, 1, 1, 15)
+    sh.getRange(rowNum, 1, 1, ncols)
       .setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
   }
 }
 
 function actualizarDashboard() {
-  const ss  = SpreadsheetApp.getActive();
-  const src = ss.getSheetByName(SHEET_RECEPCIONES);
-  const dst = ss.getSheetByName(SHEET_DASHBOARD);
-  const m   = _headerMap_(src);
+  const ss   = SpreadsheetApp.getActive();
+  const src  = ss.getSheetByName(SHEET_RECEPCIONES);
+  const dst  = ss.getSheetByName(SHEET_DASHBOARD);
+  const m    = _headerMap_(src);
   const data = src.getDataRange().getValues();
   const hoy  = new Date();
   const mesActual = Utilities.formatDate(hoy, Session.getScriptTimeZone(), "MMMM yyyy");
@@ -1032,13 +1172,8 @@ function actualizarDashboard() {
     stats.ubTotal += ub;
     stats.urTotal += ur;
 
-    if (estado === "Pagado") {
-      stats.pagados++;
-      stats.montoPagado += tq;
-    } else if (estado === "Pendiente") {
-      stats.pendientes++;
-      stats.montoPendiente += tq;
-    }
+    if (estado === "Pagado")   { stats.pagados++;    stats.montoPagado    += tq; }
+    if (estado === "Pendiente"){ stats.pendientes++; stats.montoPendiente += tq; }
   }
 
   const promIngresos = stats.participantes.size > 0 ? stats.totalQ / stats.participantes.size : 0;
@@ -1052,14 +1187,15 @@ function actualizarDashboard() {
     .setHorizontalAlignment("center").setFontColor("#666").setFontSize(11);
 
   let row = 4;
+
   const indicadores = [
-    ["ME.P.01", "Participantes Activos",    stats.participantes.size,                     "personas", "#1976d2"],
-    ["ME.P.07", "Clientes Únicos",           stats.clientes.size,                          "clientes", "#388e3c"],
-    ["ME.P.08", "Pedidos Completados",       stats.pedidos,                                "pedidos",  "#f57c00"],
-    ["ME.P.10", "Ingresos Totales",          "Q " + stats.totalQ.toFixed(2),               "GTQ",      "#d32f2f"],
-    ["ME.R.01", "Promedio/Participante",     "Q " + promIngresos.toFixed(2),               "GTQ",      "#7b1fa2"],
-    ["CALIDAD", "Tasa de Rechazo",           (tasaRechazo * 100).toFixed(1) + "%",         "%",        "#e64a19"],
-    ["PAGOS",   "Pendientes",                "Q " + stats.montoPendiente.toFixed(2),       "GTQ",      "#c62828"]
+    ["ME.P.01", "Participantes Activos",   stats.participantes.size,               "personas", "#1976d2"],
+    ["ME.P.07", "Clientes Únicos",          stats.clientes.size,                    "clientes", "#388e3c"],
+    ["ME.P.08", "Pedidos Completados",      stats.pedidos,                          "pedidos",  "#f57c00"],
+    ["ME.P.10", "Ingresos Totales",         "Q " + stats.totalQ.toFixed(2),         "GTQ",      "#d32f2f"],
+    ["ME.R.01", "Promedio/Participante",    "Q " + promIngresos.toFixed(2),         "GTQ",      "#7b1fa2"],
+    ["CALIDAD", "Tasa de Rechazo",          (tasaRechazo * 100).toFixed(1) + "%",   "%",        "#e64a19"],
+    ["PAGOS",   "Pendientes",               "Q " + stats.montoPendiente.toFixed(2), "GTQ",      "#c62828"]
   ];
 
   for (const ind of indicadores) {
@@ -1071,9 +1207,57 @@ function actualizarDashboard() {
     row++;
   }
 
+  // ── Mejora 2: sección métodos de pago ──────────────────────────────────────
+  row++;
+  dst.getRange(row, 1, 1, 4).merge().setValue("💳 MÉTODOS DE PAGO")
+    .setFontWeight("bold").setBackground("#37474f").setFontColor("white")
+    .setHorizontalAlignment("center");
+  dst.setRowHeight(row, 22);
+  row++;
+
+  const shCheques = ss.getSheetByName(SHEET_CHEQUES);
+  const shTrans   = ss.getSheetByName(SHEET_TRANSFERENCIAS);
+
+  let chequesPend = 0, montoCheqPend = 0, chequesOk = 0, montoCheqOk = 0;
+  let transPend   = 0, montoTransPend = 0, transOk   = 0, montoTransOk = 0;
+
+  if (shCheques && shCheques.getLastRow() > 1) {
+    shCheques.getRange(2, 1, shCheques.getLastRow() - 1, 9).getValues().forEach(r => {
+      const estado = String(r[7] || "").trim();
+      const total  = Number(r[5]) || 0;
+      if (estado === "Pendiente") { chequesPend++; montoCheqPend += total; }
+      if (estado === "Entregado") { chequesOk++;   montoCheqOk   += total; }
+    });
+  }
+
+  if (shTrans && shTrans.getLastRow() > 1) {
+    shTrans.getRange(2, 1, shTrans.getLastRow() - 1, 12).getValues().forEach(r => {
+      const estado = String(r[10] || "").trim();
+      const total  = Number(r[7])  || 0;
+      if (estado === "Pendiente") { transPend++; montoTransPend += total; }
+      if (estado === "Ejecutado") { transOk++;   montoTransOk   += total; }
+    });
+  }
+
+  const indicadoresPago = [
+    ["CHQ-PEND", "Cheques pendientes",       chequesPend > 0 ? "Q " + montoCheqPend.toFixed(2)  : "—", "GTQ", "#7b1fa2"],
+    ["CHQ-OK",   "Cheques entregados",        "Q " + montoCheqOk.toFixed(2),                            "GTQ", "#4a148c"],
+    ["TRF-PEND", "Transferencias pendientes", transPend > 0 ? "Q " + montoTransPend.toFixed(2)   : "—", "GTQ", "#00838f"],
+    ["TRF-OK",   "Transferencias ejecutadas", "Q " + montoTransOk.toFixed(2),                           "GTQ", "#006064"]
+  ];
+
+  for (const ind of indicadoresPago) {
+    dst.getRange(row, 1).setValue(ind[0]).setFontWeight("bold").setFontSize(9).setBackground("#eceff1").setFontColor("#37474f");
+    dst.getRange(row, 2).setValue(ind[1]).setFontWeight("bold").setFontSize(10).setBackground("#ffffff");
+    dst.getRange(row, 3).setValue(ind[2]).setFontWeight("bold").setFontSize(13).setBackground(ind[4]).setFontColor("white").setHorizontalAlignment("center");
+    dst.getRange(row, 4).setValue(ind[3]).setFontSize(9).setBackground(ind[4]).setFontColor("white").setHorizontalAlignment("center");
+    dst.setRowHeight(row, 28);
+    row++;
+  }
+
   dst.setColumnWidth(1, 100);
-  dst.setColumnWidth(2, 200);
-  dst.setColumnWidth(3, 150);
+  dst.setColumnWidth(2, 220);
+  dst.setColumnWidth(3, 160);
   dst.setColumnWidth(4, 100);
 }
 
@@ -1090,21 +1274,19 @@ function actualizarReportes() {
   const mapaCreamosID = {};
 
   if (catAct) {
-    const dataCatAct = catAct.getDataRange().getValues();
-    for (let j = 1; j < dataCatAct.length; j++) {
-      const nombre = String(dataCatAct[j][CAT_COL.NOMBRE] || "").trim();
-      const id     = String(dataCatAct[j][CAT_COL.ID]     || "").trim();
+    catAct.getDataRange().getValues().slice(1).forEach(r => {
+      const nombre = String(r[CAT_COL.NOMBRE] || "").trim();
+      const id     = String(r[CAT_COL.ID]     || "").trim();
       if (nombre && id) mapaCreamosID[nombre] = id;
-    }
+    });
   }
 
   if (catIna) {
-    const dataCatIna = catIna.getDataRange().getValues();
-    for (let j = 1; j < dataCatIna.length; j++) {
-      const nombre = String(dataCatIna[j][CAT_COL.NOMBRE] || "").trim();
-      const id     = String(dataCatIna[j][CAT_COL.ID]     || "").trim();
+    catIna.getDataRange().getValues().slice(1).forEach(r => {
+      const nombre = String(r[CAT_COL.NOMBRE] || "").trim();
+      const id     = String(r[CAT_COL.ID]     || "").trim();
       if (nombre && id) mapaCreamosID[nombre] = id;
-    }
+    });
   }
 
   const reportes = [];
@@ -1113,20 +1295,20 @@ function actualizarReportes() {
     const p = String(r[m["participante"] - 1] || "").trim();
     if (!p) continue;
 
-    const fe         = new Date(r[m["fecha entrega"] - 1]);
-    const mesAño     = isNaN(fe) ? "" : Utilities.formatDate(fe, Session.getScriptTimeZone(), "yyyy-MM");
-    const ub         = Number(r[m["unidades buenas"]    - 1]) || 0;
-    const ur         = Number(r[m["unidades rechazadas"] - 1]) || 0;
+    const fe          = new Date(r[m["fecha entrega"] - 1]);
+    const mesAño      = isNaN(fe) ? "" : Utilities.formatDate(fe, Session.getScriptTimeZone(), "yyyy-MM");
+    const ub          = Number(r[m["unidades buenas"]    - 1]) || 0;
+    const ur          = Number(r[m["unidades rechazadas"] - 1]) || 0;
     const tasaRechazo = (ub + ur) > 0 ? ur / (ub + ur) : 0;
-    const tq         = Number(r[m["total q"]  - 1]) || 0;
-    const estado     = String(r[m["estado pago"]  - 1] || "").trim();
-    const metodo     = String(r[m["método pago"]  - 1] || "").trim();
-    const dias       = isNaN(fe) ? 0 : Math.floor((hoy - fe) / (1000 * 60 * 60 * 24));
-    const creamosID  = mapaCreamosID[p] || "";
+    const tq          = Number(r[m["total q"]  - 1]) || 0;
+    const estado      = String(r[m["estado pago"]  - 1] || "").trim();
+    const metodo      = String(r[m["método pago"]  - 1] || "").trim();
+    const dias        = isNaN(fe) ? 0 : Math.floor((hoy - fe) / (1000 * 60 * 60 * 24));
+    const creamosID   = mapaCreamosID[p] || "";
 
     reportes.push([
       fe, mesAño, creamosID, p,
-      String(r[m["producto"]          - 1] || "").trim(),
+      String(r[m["producto"]           - 1] || "").trim(),
       String(r[m["proyecto / cliente"] - 1] || "").trim(),
       ub, ur, tasaRechazo, tq, estado, metodo,
       estado === "Pendiente" ? dias : 0
@@ -1204,21 +1386,23 @@ function _ejecutarPago_(rowPagoPend, tipo) {
     const shPago = ss.getSheetByName(SHEET_PAGOS_PEND);
     const shRec  = ss.getSheetByName(SHEET_RECEPCIONES);
 
-    const participante  = String(shPago.getRange(rowPagoPend, 1).getValue()).trim();
-    const fechaEntrega  = shPago.getRange(rowPagoPend, 3).getValue();
+    const participante = String(shPago.getRange(rowPagoPend, 1).getValue()).trim();
+    const fechaEntrega = shPago.getRange(rowPagoPend, 3).getValue();
 
-    // Normalizar a medianoche para comparar solo por día (evita fallos por diferencia de horas)
+    // Normalizar a medianoche para comparar solo por día
     const diaEntrega = new Date(fechaEntrega);
     diaEntrega.setHours(0, 0, 0, 0);
 
-    const mRec   = _headerMap_(shRec);
+    const mRec    = _headerMap_(shRec);
     const dataRec = shRec.getDataRange().getValues();
-    const hoy    = new Date();
+    const hoy     = new Date();
 
-    let encontrado = false;
+    let encontrado    = false;
+    let datosFilaPago = null;
+
     for (let i = DATA_START_ROW - 1; i < dataRec.length; i++) {
-      const r = dataRec[i];
-      const p = String(r[mRec["participante"] - 1] || "").trim();
+      const r  = dataRec[i];
+      const p  = String(r[mRec["participante"] - 1] || "").trim();
       const fe = new Date(r[mRec["fecha entrega"] - 1]);
 
       if (p === participante && !isNaN(fe)) {
@@ -1226,10 +1410,23 @@ function _ejecutarPago_(rowPagoPend, tipo) {
         diaFe.setHours(0, 0, 0, 0);
 
         if (diaFe.getTime() === diaEntrega.getTime()) {
-          const rowRec = i + 1;
+          const rowRec      = i + 1;
+          const metodoValor = tipo === "Cheque entregado" ? "Cheque" : "Transferencia";
+
           shRec.getRange(rowRec, mRec["estado pago"]).setValue("Pagado");
           shRec.getRange(rowRec, mRec["fecha pago"]).setValue(hoy);
-          shRec.getRange(rowRec, mRec["método pago"]).setValue(tipo === "Cheque entregado" ? "Cheque" : "Efectivo");
+          shRec.getRange(rowRec, mRec["método pago"]).setValue(metodoValor);
+
+          // Capturar datos de la fila para Mejoras 2 y 4
+          datosFilaPago = {
+            quincena:  String(r[mRec["quincena"]          - 1] || "").trim(),
+            creamosID: String(r[mRec["creamos id"]        - 1] || "").trim(),
+            producto:  String(r[mRec["producto"]          - 1] || "").trim(),
+            ub:        Number(r[mRec["unidades buenas"]   - 1]) || 0,
+            tq:        Number(r[mRec["total q"]           - 1]) || 0,
+            metodo:    metodoValor
+          };
+
           encontrado = true;
           break;
         }
@@ -1237,6 +1434,11 @@ function _ejecutarPago_(rowPagoPend, tipo) {
     }
 
     shPago.getRange(rowPagoPend, 11).clearContent();
+
+    if (encontrado && datosFilaPago) {
+      // Mejoras 2 y 4: registrar en Cheques/Transferencias e Historial_Pagos
+      _registrarPagoEnHojas_(participante, datosFilaPago, hoy, tipo);
+    }
 
     if (encontrado) {
       SpreadsheetApp.getActive().toast("✅ Pago marcado como " + tipo, null, 2);
@@ -1249,6 +1451,262 @@ function _ejecutarPago_(rowPagoPend, tipo) {
     SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
   }
 }
+
+
+// ========================= MEJORA 1 – QUINCENAS =========================
+
+function _obtenerQuincenaActiva_() {
+  const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_PERIODOS);
+  if (!sh || sh.getLastRow() < 2) return "";
+  const data = sh.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][4] || "").trim() === "Activo") return String(data[i][1] || "").trim();
+  }
+  return "";
+}
+
+function _formatNombreQuincena_(inicio, fin) {
+  const mes = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  return `Q_${inicio.getDate()}_${mes[inicio.getMonth()]}_${fin.getDate()}_${mes[fin.getMonth()]}_${fin.getFullYear()}`;
+}
+
+function cerrarQuincenaActual() {
+  try {
+    const ss = SpreadsheetApp.getActive();
+    const sh = ss.getSheetByName(SHEET_PERIODOS);
+    if (!sh) return SpreadsheetApp.getUi().alert("Hoja PERIODOS no encontrada. Instala el sistema primero.");
+
+    const data = sh.getDataRange().getValues();
+    let filaActiva     = -1;
+    let fechaFinActiva = null;
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][4] || "").trim() === "Activo") {
+        filaActiva     = i + 1;          // row en la hoja (1-indexed)
+        fechaFinActiva = new Date(data[i][3]);
+        break;
+      }
+    }
+
+    if (filaActiva === -1) return SpreadsheetApp.getUi().alert("No hay ninguna quincena activa.");
+
+    const ui = SpreadsheetApp.getUi();
+    const ok = ui.alert(
+      "Cerrar quincena",
+      "¿Cerrar la quincena activa y crear automáticamente la siguiente (15 días)?",
+      ui.ButtonSet.YES_NO
+    );
+    if (ok !== ui.Button.YES) return;
+
+    // Cerrar la quincena actual
+    sh.getRange(filaActiva, 5).setValue("Cerrado");
+
+    // Crear la siguiente quincena
+    const nuevaInicio = new Date(fechaFinActiva);
+    nuevaInicio.setDate(nuevaInicio.getDate() + 1);
+    const nuevaFin = new Date(nuevaInicio);
+    nuevaFin.setDate(nuevaFin.getDate() + 14);
+
+    const nombreNueva = _formatNombreQuincena_(nuevaInicio, nuevaFin);
+    const nextNum     = sh.getLastRow();     // # secuencial
+    sh.appendRow([nextNum, nombreNueva, nuevaInicio, nuevaFin, "Activo", ""]);
+    sh.getRange(sh.getLastRow(), 3, 1, 2).setNumberFormat("yyyy-mm-dd");
+
+    actualizarHistorialQuincenas();
+    ss.toast("✅ Quincena cerrada. Nueva: " + nombreNueva, null, 5);
+  } catch (e) {
+    SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
+  }
+}
+
+function actualizarHistorialQuincenas() {
+  const ss   = SpreadsheetApp.getActive();
+  const src  = ss.getSheetByName(SHEET_RECEPCIONES);
+  const per  = ss.getSheetByName(SHEET_PERIODOS);
+  const dst  = ss.getSheetByName(SHEET_HIST_QUINCENAS);
+  const catS = ss.getSheetByName(SHEET_CATALOGOS);
+  if (!src || !per || !dst) return;
+
+  const mRec    = _headerMap_(src);
+  const dataRec = src.getDataRange().getValues();
+  const dataPer = per.getDataRange().getValues();
+
+  // Todos los participantes activos para calcular "sin entrega"
+  const todosParticipantes = new Set();
+  if (catS && catS.getLastRow() > 1) {
+    catS.getRange("B2:B" + catS.getLastRow()).getValues()
+      .flat().filter(x => x).forEach(n => todosParticipantes.add(String(n).trim()));
+  }
+
+  // Agrupar recepciones por nombre de quincena
+  const byQ = {};
+  for (let i = DATA_START_ROW - 1; i < dataRec.length; i++) {
+    const r = dataRec[i];
+    const p = String(r[mRec["participante"] - 1] || "").trim();
+    if (!p) continue;
+    const q = String(r[mRec["quincena"] - 1] || "").trim() || "Sin quincena";
+    if (!byQ[q]) byQ[q] = { entregas: 0, ub: 0, ur: 0, tq: 0, parts: new Set() };
+    byQ[q].entregas++;
+    byQ[q].ub  += Number(r[mRec["unidades buenas"]    - 1]) || 0;
+    byQ[q].ur  += Number(r[mRec["unidades rechazadas"] - 1]) || 0;
+    byQ[q].tq  += Number(r[mRec["total q"]            - 1]) || 0;
+    byQ[q].parts.add(p);
+  }
+
+  dst.clearContents();
+  dst.clearFormats();
+  dst.getRange("A1").setValue("HISTORIAL DE QUINCENAS").setFontWeight("bold").setFontSize(12)
+    .setBackground("#37474f").setFontColor("white");
+
+  dst.getRange("A2:J2").setValues([[
+    "Quincena", "Fecha_Inicio", "Fecha_Fin", "Entregas", "Unidades_Buenas",
+    "Unidades_Rechazadas", "Total_Q", "Participantes_Con_Entrega",
+    "Participantes_Sin_Entrega", "Notas"
+  ]])
+    .setFontWeight("bold").setBackground("#455a64").setFontColor("white")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  dst.setFrozenRows(2);
+  dst.setRowHeight(2, 25);
+
+  const rows    = [];
+  const estados = [];
+
+  for (let i = 1; i < dataPer.length; i++) {
+    const nombreQ  = String(dataPer[i][1] || "").trim();
+    const fechaIni = dataPer[i][2];
+    const fechaFin = dataPer[i][3];
+    const estado   = String(dataPer[i][4] || "").trim();
+    const notas    = dataPer[i][5] || "";
+    const d        = byQ[nombreQ] || { entregas: 0, ub: 0, ur: 0, tq: 0, parts: new Set() };
+    const conEntrega = d.parts.size;
+    const sinEntrega = Math.max(0, todosParticipantes.size - conEntrega);
+    rows.push([nombreQ, fechaIni, fechaFin, d.entregas, d.ub, d.ur, d.tq, conEntrega, sinEntrega, notas]);
+    estados.push(estado);
+  }
+
+  if (rows.length) {
+    dst.getRange(3, 1, rows.length, 10).setValues(rows);
+    dst.getRange(3, 2, rows.length, 2).setNumberFormat("yyyy-mm-dd");
+    dst.getRange(3, 7, rows.length, 1).setNumberFormat('"Q " #,##0.00');
+    dst.getRange(3, 1, rows.length, 10)
+      .setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+
+    for (let i = 0; i < rows.length; i++) {
+      if (estados[i] === "Activo") {
+        // Resaltar la quincena en curso
+        dst.getRange(3 + i, 1, 1, 10).setBackground("#e8f5e9").setFontColor("#1b5e20").setFontWeight("bold");
+      } else {
+        dst.getRange(3 + i, 1, 1, 10).setBackground("#ffffff").setFontColor("#212121");
+      }
+    }
+  }
+
+  dst.setColumnWidth(1, 210); dst.setColumnWidth(2, 110);  dst.setColumnWidth(3, 110);
+  dst.setColumnWidth(4, 90);  dst.setColumnWidth(5, 130);  dst.setColumnWidth(6, 150);
+  dst.setColumnWidth(7, 110); dst.setColumnWidth(8, 180);  dst.setColumnWidth(9, 180);
+  dst.setColumnWidth(10, 220);
+}
+
+
+// ========================= MEJORA 2 – REGISTRAR EN CHEQUES / TRANSFERENCIAS =========================
+
+// Agrega fila a Historial_Pagos (nunca se borra)
+function _appendHistorialPago_(participante, datos, fechaPago) {
+  const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_HISTORIAL_PAGOS);
+  if (!sh) return;
+  sh.appendRow([
+    fechaPago,
+    datos.quincena   || "",
+    participante     || "",
+    datos.creamosID  || "",
+    datos.producto   || "",
+    datos.ub         || 0,
+    datos.tq         || 0,
+    datos.metodo     || "",
+    datos.referencia || "",
+    datos.notas      || ""
+  ]);
+}
+
+// Agrega en Cheques o Transferencias según tipo, y siempre en Historial_Pagos
+function _registrarPagoEnHojas_(participante, datos, fechaPago, tipo) {
+  const ss     = SpreadsheetApp.getActive();
+  const catAct = ss.getSheetByName(SHEET_CATALOGOS);
+
+  let numCuenta = "", tipoCuenta = "", banco = "", titular = "";
+  if (catAct) {
+    const dataCat = catAct.getDataRange().getValues();
+    for (let j = 1; j < dataCat.length; j++) {
+      if (String(dataCat[j][CAT_COL.NOMBRE] || "").trim() === participante) {
+        numCuenta  = dataCat[j][CAT_COL.NUM_CUENTA]  || "";
+        tipoCuenta = dataCat[j][CAT_COL.TIPO_CUENTA] || "";
+        banco      = dataCat[j][CAT_COL.BANCO]        || "";
+        titular    = dataCat[j][CAT_COL.TITULAR]      || "";
+        break;
+      }
+    }
+  }
+
+  if (tipo === "Cheque entregado") {
+    const shCheques = ss.getSheetByName(SHEET_CHEQUES);
+    if (shCheques) {
+      // Quincena | Participante | Creamos_ID | Nº_Cheque | Banco | Total_Q | Fecha_Entrega | Estado | Notas
+      shCheques.appendRow([datos.quincena, participante, datos.creamosID, "", banco, datos.tq, fechaPago, "Entregado", ""]);
+    }
+  } else {
+    const shTrans = ss.getSheetByName(SHEET_TRANSFERENCIAS);
+    if (shTrans) {
+      // Quincena | Participante | Creamos_ID | Nº_Cuenta | Tipo_Cuenta | Banco | Titular | Total_Q | Fecha_Trans | Comprobante | Estado | Notas
+      shTrans.appendRow([datos.quincena, participante, datos.creamosID, numCuenta, tipoCuenta, banco, titular, datos.tq, fechaPago, "", "Ejecutado", ""]);
+    }
+  }
+
+  _appendHistorialPago_(participante, datos, fechaPago);
+}
+
+
+// ========================= MEJORA 3 – PARTICIPACIÓN EN PROGRAMAS =========================
+
+function actualizarParticipacionProgramas() {
+  try {
+    const ss   = SpreadsheetApp.getActive();
+    const cat  = ss.getSheetByName(SHEET_CATALOGOS);
+    const prog = ss.getSheetByName(SHEET_PROGRAMAS);
+    if (!cat || !prog) return SpreadsheetApp.getUi().alert("Instala el sistema primero.");
+
+    const dataCat  = cat.getDataRange().getValues();
+
+    // Mapear participantes ya existentes en la hoja de programas (por Creamos_ID)
+    const existingMap = {};
+    if (prog.getLastRow() > 1) {
+      prog.getRange(2, 1, prog.getLastRow() - 1, 2).getValues().forEach((r, idx) => {
+        const cid = String(r[0] || "").trim();
+        if (cid) existingMap[cid] = idx + 2; // fila 1-indexed en la hoja
+      });
+    }
+
+    let agregados = 0;
+    for (let i = 1; i < dataCat.length; i++) {
+      const cid    = String(dataCat[i][CAT_COL.ID]     || "").trim();
+      const nombre = String(dataCat[i][CAT_COL.NOMBRE] || "").trim();
+      if (!cid && !nombre) continue;
+
+      if (!existingMap[cid]) {
+        // Participante nuevo → agregar con Manufactura = TRUE
+        prog.appendRow([cid, nombre, true, false, false, false, false, ""]);
+        agregados++;
+      } else {
+        // Ya existe → garantizar Manufactura = TRUE
+        prog.getRange(existingMap[cid], 3).setValue(true);
+      }
+    }
+
+    ss.toast(`✅ Participación sincronizada.${agregados > 0 ? " " + agregados + " nuevos." : " Todo al día."}`, null, 3);
+  } catch (e) {
+    SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
+  }
+}
+
 
 // ========================= UTILIDADES =========================
 
