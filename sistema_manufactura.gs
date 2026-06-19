@@ -6,23 +6,20 @@
 
 const NOMBRE_PROGRAMA = "NOMBRE DEL PROGRAMA";
 
-// ── Hojas existentes ──────────────────────────────────────────────────────────
-const SHEET_RECEPCIONES   = "Recepciones";
-const SHEET_CATALOGOS     = "Participantes Activos";
-const SHEET_INACTIVOS     = "Participantes Inactivos";
-const SHEET_RESUMEN_PART  = "Resumen Participantes";
-const SHEET_RESUMEN_MENS  = "Resumen Mensual";   // conservado para limpiar instalaciones antiguas
-const SHEET_PAGOS_PEND    = "Pagos Pendientes";
-const SHEET_DASHBOARD     = "Dashboard";
-const SHEET_REPORTES      = "Reportes PowerBI";
-
-// ── Hojas nuevas (Mejoras 1-4) ────────────────────────────────────────────────
-const SHEET_PERIODOS        = "PERIODOS";
-const SHEET_HIST_QUINCENAS  = "Historial Quincenas";   // reemplaza Resumen Mensual
-const SHEET_CHEQUES         = "Cheques";
-const SHEET_TRANSFERENCIAS  = "Transferencias";
-const SHEET_PROGRAMAS       = "Programas_Participacion";
-const SHEET_HISTORIAL_PAGOS = "Historial_Pagos";
+// ── Hojas del sistema ─────────────────────────────────────────────────────────
+const SHEET_RECEPCIONES    = "Recepciones";
+const SHEET_CATALOGOS      = "Participantes Activos";
+const SHEET_INACTIVOS      = "Participantes Inactivos";
+const SHEET_RESUMEN_PART   = "Resumen Participantes";
+const SHEET_PAGOS_PEND     = "Pagos Pendientes";
+const SHEET_DASHBOARD      = "Dashboard";
+const SHEET_REPORTES       = "Reportes PowerBI";
+const SHEET_PERIODOS       = "PERIODOS";
+const SHEET_HIST_QUINCENAS = "Historial Quincenas";
+const SHEET_CHEQUES        = "Cheques";
+const SHEET_TRANSFERENCIAS = "Transferencias";
+const SHEET_PROGRAMAS      = "Programas_Participacion";
+const SHEET_HISTORIAL_PAGOS= "Historial_Pagos";
 const SHEET_ARCHIVO_REC    = "Archivo_Recepciones";
 const SHEET_CATALOGO_PROD  = "Catálogo_Productos";
 
@@ -111,10 +108,11 @@ function desinstalarSistema() {
     const ss = SpreadsheetApp.getActive();
     [
       SHEET_RECEPCIONES, SHEET_CATALOGOS, SHEET_INACTIVOS,
-      SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS, SHEET_RESUMEN_MENS, SHEET_PAGOS_PEND,
+      SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS, SHEET_PAGOS_PEND,
       SHEET_DASHBOARD, SHEET_REPORTES,
       SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_PROGRAMAS, SHEET_HISTORIAL_PAGOS,
-      SHEET_ARCHIVO_REC, SHEET_CATALOGO_PROD
+      SHEET_ARCHIVO_REC, SHEET_CATALOGO_PROD,
+      "Resumen Mensual"  // hoja antigua — borrar si existe
     ].forEach(n => {
       const sh = ss.getSheetByName(n);
       if (sh) ss.deleteSheet(sh);
@@ -131,7 +129,8 @@ function _crearEstructura_(recrear) {
   const ss = SpreadsheetApp.getActive();
   const hojasSistema = [
     SHEET_RECEPCIONES, SHEET_CATALOGOS, SHEET_INACTIVOS,
-    SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS, SHEET_PAGOS_PEND, SHEET_DASHBOARD, SHEET_REPORTES,
+    SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS, SHEET_PAGOS_PEND,
+    SHEET_DASHBOARD, SHEET_REPORTES,
     SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_PROGRAMAS, SHEET_HISTORIAL_PAGOS,
     SHEET_ARCHIVO_REC, SHEET_CATALOGO_PROD
   ];
@@ -483,21 +482,22 @@ function _setupProgramas_(sh) {
   sh.clear();
   sh.clearFormats();
 
-  sh.getRange("A1:H1").setValues([[
-    "Creamos_ID", "Participante", "Manufactura", "mi_eelo", "Educación", "Inclusión_Laboral", "Apoyo_Emocional", "Notas"
+  // Programas sociales: Manufactura es el sistema completo, NO un programa aquí
+  sh.getRange("A1:G1").setValues([[
+    "Creamos_ID", "Participante", "mi_eelo", "Educación", "Inclusión_Laboral", "Apoyo_Emocional", "Notas"
   ]])
     .setBackground("#2e7d32").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
   sh.setFrozenRows(1);
   sh.setRowHeight(1, 25);
 
-  sh.setColumnWidth(1, 110); sh.setColumnWidth(2, 190); sh.setColumnWidth(3, 110);
-  sh.setColumnWidth(4, 100); sh.setColumnWidth(5, 100); sh.setColumnWidth(6, 140);
-  sh.setColumnWidth(7, 140); sh.setColumnWidth(8, 220);
+  sh.setColumnWidth(1, 110); sh.setColumnWidth(2, 190); sh.setColumnWidth(3, 100);
+  sh.setColumnWidth(4, 100); sh.setColumnWidth(5, 140); sh.setColumnWidth(6, 140);
+  sh.setColumnWidth(7, 240);
 
-  sh.getRange("C2:G1000").insertCheckboxes();
-  sh.getRange("A2:H1000").setBackground("#f1f8e9").setFontColor("#212121");
-  sh.getRange("A2:H1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("C2:F1000").insertCheckboxes();
+  sh.getRange("A2:G1000").setBackground("#f1f8e9").setFontColor("#212121");
+  sh.getRange("A2:G1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 }
 
 // ── Mejora 4: HISTORIAL_PAGOS ─────────────────────────────────────────────────
@@ -1023,59 +1023,6 @@ function actualizarResumenParticipantes() {
   dst.setColumnWidth(1, 150); dst.setColumnWidth(2, 100); dst.setColumnWidth(3, 120);
   dst.setColumnWidth(4, 130); dst.setColumnWidth(5, 120); dst.setColumnWidth(6, 100);
   dst.setColumnWidth(7, 130);
-}
-
-// Conservada para compatibilidad — ya no se llama desde actualizarTodo
-function actualizarResumenMensual() {
-  const ss   = SpreadsheetApp.getActive();
-  const src  = ss.getSheetByName(SHEET_RECEPCIONES);
-  const dst  = ss.getSheetByName(SHEET_RESUMEN_MENS);
-  if (!src || !dst) return;
-  const m    = _headerMap_(src);
-  const data = src.getDataRange().getValues();
-
-  const byMonth = {};
-  for (let i = DATA_START_ROW - 1; i < data.length; i++) {
-    const r = data[i];
-    const p = r[m["participante"] - 1];
-    if (!p) continue;
-    const f = new Date(r[m["fecha entrega"] - 1]);
-    if (isNaN(f)) continue;
-    const key = Utilities.formatDate(f, Session.getScriptTimeZone(), "yyyy-MM");
-
-    if (!byMonth[key]) byMonth[key] = { reg: 0, b: 0, re: 0, q: 0, p: {} };
-    const ub = Number(r[m["unidades buenas"]    - 1]) || 0;
-    const ur = Number(r[m["unidades rechazadas"] - 1]) || 0;
-    const tq = Number(r[m["total q"]            - 1]) || 0;
-    byMonth[key].reg++;
-    byMonth[key].b  += ub;
-    byMonth[key].re += ur;
-    byMonth[key].q  += tq;
-    byMonth[key].p[p] = (byMonth[key].p[p] || 0) + ub;
-  }
-
-  dst.clear();
-  dst.getRange("A1").setValue("RESUMEN MENSUAL").setFontWeight("bold").setFontSize(12)
-    .setBackground("#37474f").setFontColor("white");
-  dst.getRange(3, 1, 1, 7).setValues([["Mes","Registros","Unidades buenas","Unidades rechazadas","Tasa rechazo %","Total Q","Top 3 participantes"]])
-    .setFontWeight("bold").setBackground("#455a64").setFontColor("white").setHorizontalAlignment("center");
-  dst.setRowHeight(3, 25);
-
-  const keys = Object.keys(byMonth).sort();
-  const out  = keys.map(k => {
-    const d   = byMonth[k];
-    const top = Object.entries(d.p).sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => `${x[0]} (${x[1]})`).join(", ");
-    return [k, d.reg, d.b, d.re, (d.b + d.re) ? d.re / (d.b + d.re) : 0, d.q, top];
-  });
-
-  if (out.length) {
-    dst.getRange(4, 1, out.length, 7).setValues(out);
-    dst.getRange(4, 1, out.length, 7)
-      .setBackground("#ffffff").setFontColor("#212121")
-      .setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
-    dst.getRange(4, 5, out.length, 1).setNumberFormat("0.00%");
-    dst.getRange(4, 6, out.length, 1).setNumberFormat('"Q " #,##0.00');
-  }
 }
 
 function actualizarPagosPendientes() {
@@ -1869,13 +1816,11 @@ function actualizarParticipacionProgramas() {
       if (!cid && !nombre) continue;
 
       if (!existingMap[cid]) {
-        // Participante nuevo → agregar con Manufactura = TRUE
-        prog.appendRow([cid, nombre, true, false, false, false, false, ""]);
+        // A=CID | B=Nombre | C=mi_eelo | D=Educación | E=Inclusión_Laboral | F=Apoyo_Emocional | G=Notas
+        prog.appendRow([cid, nombre, false, false, false, false, ""]);
         agregados++;
-      } else {
-        // Ya existe → garantizar Manufactura = TRUE
-        prog.getRange(existingMap[cid], 3).setValue(true);
       }
+      // No se toca nada en participantes existentes (sus checkboxes ya fueron marcados manualmente)
     }
 
     ss.toast(`✅ Participación sincronizada.${agregados > 0 ? " " + agregados + " nuevos." : " Todo al día."}`, null, 3);
