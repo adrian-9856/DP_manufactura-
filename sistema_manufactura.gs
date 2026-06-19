@@ -23,6 +23,8 @@ const SHEET_CHEQUES         = "Cheques";
 const SHEET_TRANSFERENCIAS  = "Transferencias";
 const SHEET_PROGRAMAS       = "Programas_Participacion";
 const SHEET_HISTORIAL_PAGOS = "Historial_Pagos";
+const SHEET_ARCHIVO_REC    = "Archivo_Recepciones";
+const SHEET_CATALOGO_PROD  = "Catálogo_Productos";
 
 const HEADER_ROW     = 4;
 const DATA_START_ROW = 5;
@@ -45,6 +47,10 @@ const CAT_COL = {
   TITULAR:     6,  // G – Titular
   DPI:         7,  // H – DPI
   EMAIL:       8,  // I – Email
+  // J(9) = Programas texto, K(10) = Producto, L(11) = Precio
+  HIJOS:      12,  // M – N° Hijos
+  CCI:        13,  // N – CCI (checkbox)
+  CUNDE:      14,  // O – CUNDE (checkbox)
 };
 
 // ========================= MENU =========================
@@ -61,6 +67,7 @@ function onOpen() {
       .addItem("✅ Marcar fila como pagada",   "marcarFilaPagada")
       .addSeparator()
       .addItem("📅 Cerrar quincena actual",       "cerrarQuincenaActual")
+      .addItem("🗓️ Cerrar mes",                   "cerrarMes")
       .addItem("📋 Actualizar participación",      "actualizarParticipacionProgramas")
       .addSeparator()
       .addItem("🔄 Actualizar todo", "actualizarTodo")
@@ -106,7 +113,8 @@ function desinstalarSistema() {
       SHEET_RECEPCIONES, SHEET_CATALOGOS, SHEET_INACTIVOS,
       SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS, SHEET_RESUMEN_MENS, SHEET_PAGOS_PEND,
       SHEET_DASHBOARD, SHEET_REPORTES,
-      SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_PROGRAMAS, SHEET_HISTORIAL_PAGOS
+      SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_PROGRAMAS, SHEET_HISTORIAL_PAGOS,
+      SHEET_ARCHIVO_REC, SHEET_CATALOGO_PROD
     ].forEach(n => {
       const sh = ss.getSheetByName(n);
       if (sh) ss.deleteSheet(sh);
@@ -124,7 +132,8 @@ function _crearEstructura_(recrear) {
   const hojasSistema = [
     SHEET_RECEPCIONES, SHEET_CATALOGOS, SHEET_INACTIVOS,
     SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS, SHEET_PAGOS_PEND, SHEET_DASHBOARD, SHEET_REPORTES,
-    SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_PROGRAMAS, SHEET_HISTORIAL_PAGOS
+    SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_PROGRAMAS, SHEET_HISTORIAL_PAGOS,
+    SHEET_ARCHIVO_REC, SHEET_CATALOGO_PROD
   ];
 
   if (recrear) {
@@ -147,6 +156,8 @@ function _crearEstructura_(recrear) {
   const tra  = _getOrCreate_(SHEET_TRANSFERENCIAS);
   const prog = _getOrCreate_(SHEET_PROGRAMAS);
   const hist = _getOrCreate_(SHEET_HISTORIAL_PAGOS);
+  const arc  = _getOrCreate_(SHEET_ARCHIVO_REC);
+  const cat2 = _getOrCreate_(SHEET_CATALOGO_PROD);
 
   _setupRecepciones_(rec);
   _setupCatalogos_(cat);
@@ -161,6 +172,8 @@ function _crearEstructura_(recrear) {
   _setupTransferencias_(tra);
   _setupProgramas_(prog);
   _setupHistorialPagos_(hist);
+  _setupArchivo_(arc);
+  _setupCatalogo_(cat2);
 
   crearValidacionesDatos();
   actualizarTodo();
@@ -212,6 +225,10 @@ function _setupCatalogos_(sh) {
     .setBackground("#1565c0").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
+  sh.getRange("M1:O1").setValues([["N° Hijos", "CCI", "CUNDE"]])
+    .setBackground("#4a148c").setFontColor("#ffffff").setFontWeight("bold")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+
   sh.setFrozenRows(1);
   sh.setRowHeight(1, 25);
 
@@ -227,6 +244,9 @@ function _setupCatalogos_(sh) {
   sh.setColumnWidth(10, 160);  // J – Programas
   sh.setColumnWidth(11, 150);
   sh.setColumnWidth(12, 100);
+  sh.setColumnWidth(13, 80);   // M – N° Hijos
+  sh.setColumnWidth(14, 60);   // N – CCI
+  sh.setColumnWidth(15, 70);   // O – CUNDE
 
   sh.getRange("A2:J1000").setBackground("#ffffff").setFontColor("#212121");
   sh.getRange("A2:J1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
@@ -234,6 +254,12 @@ function _setupCatalogos_(sh) {
   sh.getRange("K2:L1000").setBackground("#ffffff").setFontColor("#212121");
   sh.getRange("K2:L1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
   sh.getRange("L2:L1000").setNumberFormat('"Q " #,##0.00');
+
+  sh.getRange("M2:M1000").setBackground("#fce4ec").setFontColor("#212121");
+  sh.getRange("M2:M1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("N2:O1000").insertCheckboxes();
+  sh.getRange("N2:O1000").setBackground("#fce4ec").setFontColor("#212121");
+  sh.getRange("N2:O1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
   sh.getRange("C2:C1000").setDataValidation(
     SpreadsheetApp.newDataValidation()
@@ -458,7 +484,7 @@ function _setupProgramas_(sh) {
   sh.clearFormats();
 
   sh.getRange("A1:H1").setValues([[
-    "Creamos_ID", "Participante", "Manufactura", "mi_eelo", "Textil", "Otro_1", "Otro_2", "Notas"
+    "Creamos_ID", "Participante", "Manufactura", "mi_eelo", "Educación", "Inclusión_Laboral", "Apoyo_Emocional", "Notas"
   ]])
     .setBackground("#2e7d32").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
@@ -466,8 +492,8 @@ function _setupProgramas_(sh) {
   sh.setRowHeight(1, 25);
 
   sh.setColumnWidth(1, 110); sh.setColumnWidth(2, 190); sh.setColumnWidth(3, 110);
-  sh.setColumnWidth(4, 100); sh.setColumnWidth(5, 90);  sh.setColumnWidth(6, 90);
-  sh.setColumnWidth(7, 90);  sh.setColumnWidth(8, 220);
+  sh.setColumnWidth(4, 100); sh.setColumnWidth(5, 100); sh.setColumnWidth(6, 140);
+  sh.setColumnWidth(7, 140); sh.setColumnWidth(8, 220);
 
   sh.getRange("C2:G1000").insertCheckboxes();
   sh.getRange("A2:H1000").setBackground("#f1f8e9").setFontColor("#212121");
@@ -500,6 +526,46 @@ function _setupHistorialPagos_(sh) {
 }
 
 
+// ── Catálogo de Productos ─────────────────────────────────────────────────────
+function _setupCatalogo_(sh) {
+  sh.clear();
+  sh.clearFormats();
+
+  sh.getRange("A1:E1").setValues([["Categoría", "Diseño / Producto", "Precio (Q)", "Activo", "Notas"]])
+    .setBackground("#1565c0").setFontColor("#ffffff").setFontWeight("bold")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.setFrozenRows(1);
+  sh.setRowHeight(1, 25);
+
+  sh.setColumnWidth(1, 130); sh.setColumnWidth(2, 220); sh.setColumnWidth(3, 110);
+  sh.setColumnWidth(4, 80);  sh.setColumnWidth(5, 240);
+
+  sh.getRange("C2:C1000").setNumberFormat('"Q " #,##0.00');
+  sh.getRange("D2:D1000").insertCheckboxes();
+  sh.getRange("A2:E1000").setBackground("#ffffff").setFontColor("#212121");
+  sh.getRange("A2:E1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+}
+
+// ── Archivo de Recepciones (quincenas cerradas) ───────────────────────────────
+function _setupArchivo_(sh) {
+  sh.clear();
+  sh.clearFormats();
+
+  sh.getRange(1, 1, 1, RECEPCIONES_HEADERS.length)
+    .setValues([RECEPCIONES_HEADERS])
+    .setBackground("#546e7a").setFontColor("#ffffff").setFontWeight("bold")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.setFrozenRows(1);
+  sh.setRowHeight(1, 25);
+
+  const widths = [45, 90, 110, 150, 100, 160, 120, 100, 120, 90, 80, 80, 80, 100, 120, 150];
+  widths.forEach((w, i) => sh.setColumnWidth(i + 1, w));
+
+  sh.getRange("A2:P2000").setBackground("#fafafa").setFontColor("#212121");
+  sh.getRange("A2:P2000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+}
+
+
 // ========================= CAPTURA RAPIDA =========================
 function agregarEntregaRapida() {
   try {
@@ -517,6 +583,20 @@ function agregarEntregaRapida() {
       const precio = Number(dataCat[i][11]) || 0;
       if (prod) productosConPrecio.push({ nombre: prod, precio: precio });
     }
+
+    // También leer del Catálogo_Productos (col B = nombre, col C = precio, col D = activo)
+    const catProd = ss.getSheetByName(SHEET_CATALOGO_PROD);
+    if (catProd && catProd.getLastRow() > 1) {
+      catProd.getRange(2, 1, catProd.getLastRow() - 1, 4).getValues().forEach(r => {
+        const prod   = String(r[1] || "").trim();
+        const precio = Number(r[2]) || 0;
+        const activo = r[3];
+        if (prod && activo !== false && !productosConPrecio.find(p => p.nombre === prod)) {
+          productosConPrecio.push({ nombre: prod, precio });
+        }
+      });
+    }
+
     const productosHistorico = _obtenerHistorico_("productos");
 
     const html = HtmlService.createHtmlOutput(`
@@ -1472,48 +1552,107 @@ function _formatNombreQuincena_(inicio, fin) {
 
 function cerrarQuincenaActual() {
   try {
-    const ss = SpreadsheetApp.getActive();
-    const sh = ss.getSheetByName(SHEET_PERIODOS);
-    if (!sh) return SpreadsheetApp.getUi().alert("Hoja PERIODOS no encontrada. Instala el sistema primero.");
+    const ss  = SpreadsheetApp.getActive();
+    const shP = ss.getSheetByName(SHEET_PERIODOS);
+    const rec = ss.getSheetByName(SHEET_RECEPCIONES);
+    if (!shP) return SpreadsheetApp.getUi().alert("Hoja PERIODOS no encontrada. Instala el sistema primero.");
+    if (!rec)  return SpreadsheetApp.getUi().alert("Hoja Recepciones no encontrada.");
 
-    const data = sh.getDataRange().getValues();
-    let filaActiva     = -1;
-    let fechaFinActiva = null;
+    const arc = _getOrCreate_(SHEET_ARCHIVO_REC);
+    if (arc.getLastRow() === 0) _setupArchivo_(arc);
 
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][4] || "").trim() === "Activo") {
-        filaActiva     = i + 1;          // row en la hoja (1-indexed)
-        fechaFinActiva = new Date(data[i][3]);
+    const dataPer = shP.getDataRange().getValues();
+    let filaActiva = -1, nombreQ = "", fechaFinActiva = null;
+
+    for (let i = 1; i < dataPer.length; i++) {
+      if (String(dataPer[i][4] || "").trim() === "Activo") {
+        filaActiva     = i + 1;
+        nombreQ        = String(dataPer[i][1] || "").trim();
+        fechaFinActiva = new Date(dataPer[i][3]);
         break;
       }
     }
 
     if (filaActiva === -1) return SpreadsheetApp.getUi().alert("No hay ninguna quincena activa.");
 
+    const mRec    = _headerMap_(rec);
+    const dataRec = rec.getDataRange().getValues();
+
+    // Identificar filas de la quincena actual (y las sin quincena asignada)
+    const filasDeEstaQ  = [];
+    const filasPendient = [];
+
+    for (let i = DATA_START_ROW - 1; i < dataRec.length; i++) {
+      const r = dataRec[i];
+      const p = String(r[mRec["participante"] - 1] || "").trim();
+      if (!p) continue;
+      const q = String(r[mRec["quincena"] - 1] || "").trim();
+      if (q === nombreQ || q === "") {
+        filasDeEstaQ.push({ rowIndex: i, data: r });
+        if (String(r[mRec["estado pago"] - 1] || "").trim() === "Pendiente") {
+          filasPendient.push([...r]);
+        }
+      }
+    }
+
     const ui = SpreadsheetApp.getUi();
-    const ok = ui.alert(
-      "Cerrar quincena",
-      "¿Cerrar la quincena activa y crear automáticamente la siguiente (15 días)?",
-      ui.ButtonSet.YES_NO
-    );
-    if (ok !== ui.Button.YES) return;
 
-    // Cerrar la quincena actual
-    sh.getRange(filaActiva, 5).setValue("Cerrado");
+    if (filasPendient.length > 0) {
+      const aviso = ui.alert(
+        "⚠️ Hay " + filasPendient.length + " pago(s) pendiente(s)",
+        "Se arrastrarán a la nueva quincena con la nota '(arrastrado)'.\n¿Continuar con el cierre?",
+        ui.ButtonSet.YES_NO
+      );
+      if (aviso !== ui.Button.YES) return;
+    } else {
+      const ok = ui.alert(
+        "Cerrar quincena",
+        "¿Cerrar '" + nombreQ + "' y crear la siguiente (+15 días)?",
+        ui.ButtonSet.YES_NO
+      );
+      if (ok !== ui.Button.YES) return;
+    }
 
-    // Crear la siguiente quincena
+    // Archivar todas las filas de esta quincena
+    for (const entry of filasDeEstaQ) arc.appendRow(entry.data);
+
+    // Borrar de Recepciones de abajo hacia arriba
+    const numBorrar = filasDeEstaQ.map(e => e.rowIndex + 1).sort((a, b) => b - a);
+    for (const rn of numBorrar) rec.deleteRow(rn);
+
+    // Marcar quincena como Cerrada
+    shP.getRange(filaActiva, 5).setValue("Cerrado");
+
+    // Crear siguiente quincena
     const nuevaInicio = new Date(fechaFinActiva);
     nuevaInicio.setDate(nuevaInicio.getDate() + 1);
     const nuevaFin = new Date(nuevaInicio);
     nuevaFin.setDate(nuevaFin.getDate() + 14);
-
     const nombreNueva = _formatNombreQuincena_(nuevaInicio, nuevaFin);
-    const nextNum     = sh.getLastRow();     // # secuencial
-    sh.appendRow([nextNum, nombreNueva, nuevaInicio, nuevaFin, "Activo", ""]);
-    sh.getRange(sh.getLastRow(), 3, 1, 2).setNumberFormat("yyyy-mm-dd");
+    const nextNum     = shP.getLastRow();
+    shP.appendRow([nextNum, nombreNueva, nuevaInicio, nuevaFin, "Activo", ""]);
+    shP.getRange(shP.getLastRow(), 3, 1, 2).setNumberFormat("yyyy-mm-dd");
+
+    // Arrastrar pendientes a la nueva quincena
+    if (filasPendient.length > 0) {
+      for (const r of filasPendient) {
+        const newRow = [...r];
+        newRow[mRec["quincena"] - 1] = nombreNueva;
+        const notaActual = String(newRow[mRec["notas / calidad"] - 1] || "").trim();
+        newRow[mRec["notas / calidad"] - 1] = notaActual ? notaActual + " (arrastrado)" : "(arrastrado)";
+        rec.appendRow(newRow);
+      }
+      // Re-numerar columna #
+      for (let r = DATA_START_ROW; r <= rec.getLastRow(); r++) {
+        if (rec.getRange(r, mRec["participante"]).getValue()) {
+          rec.getRange(r, mRec["#"]).setValue(r - DATA_START_ROW + 1);
+        }
+      }
+    }
 
     actualizarHistorialQuincenas();
-    ss.toast("✅ Quincena cerrada. Nueva: " + nombreNueva, null, 5);
+    const msg = "✅ Quincena cerrada." + (filasPendient.length > 0 ? " " + filasPendient.length + " pendientes arrastrados." : "") + " Nueva: " + nombreNueva;
+    ss.toast(msg, null, 6);
   } catch (e) {
     SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
   }
@@ -1605,6 +1744,44 @@ function actualizarHistorialQuincenas() {
   dst.setColumnWidth(4, 90);  dst.setColumnWidth(5, 130);  dst.setColumnWidth(6, 150);
   dst.setColumnWidth(7, 110); dst.setColumnWidth(8, 180);  dst.setColumnWidth(9, 180);
   dst.setColumnWidth(10, 220);
+}
+
+
+// ========================= CIERRE DE MES =========================
+
+function cerrarMes() {
+  try {
+    const ss = SpreadsheetApp.getActive();
+    const ui = SpreadsheetApp.getUi();
+
+    const ok = ui.alert(
+      "🗓️ Cierre de mes",
+      "Esto hará:\n  1. Guardar copia del archivo en Drive\n  2. Limpiar Recepciones (cabeceras intactas)\n  3. Limpiar Archivo_Recepciones\n\n⚠️ Historial_Pagos NUNCA se borra.\n\n¿Continuar?",
+      ui.ButtonSet.YES_NO
+    );
+    if (ok !== ui.Button.YES) return;
+
+    const hoy   = new Date();
+    const meses = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+    const sufijo = meses[hoy.getMonth()] + hoy.getFullYear();
+    const nombre = "Manufactura_" + NOMBRE_PROGRAMA.replace(/ /g, "_") + "_" + sufijo;
+
+    DriveApp.getFileById(ss.getId()).makeCopy(nombre);
+
+    const rec = ss.getSheetByName(SHEET_RECEPCIONES);
+    if (rec && rec.getLastRow() >= DATA_START_ROW) {
+      rec.deleteRows(DATA_START_ROW, rec.getLastRow() - DATA_START_ROW + 1);
+    }
+
+    const arc = ss.getSheetByName(SHEET_ARCHIVO_REC);
+    if (arc && arc.getLastRow() > 1) {
+      arc.deleteRows(2, arc.getLastRow() - 1);
+    }
+
+    ss.toast("✅ Copia guardada en Drive: '" + nombre + "'. Hojas limpiadas.", null, 8);
+  } catch (e) {
+    SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
+  }
 }
 
 
