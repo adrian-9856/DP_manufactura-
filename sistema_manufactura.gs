@@ -56,25 +56,26 @@ const CAT_COL = {
 function onOpen() {
   try {
     SpreadsheetApp.getUi()
-      .createMenu("⚙️ Automatización")
-      .addItem("🚀 Instalar sistema",          "instalarSistema")
-      .addItem("♻️ Reinstalar sistema",        "reinstalarSistema")
-      .addItem("🧹 Limpiar hojas obsoletas",   "limpiarHojasObsoletas")
-      .addItem("🗑️ Desinstalar sistema",       "desinstalarSistema")
+      .createMenu("⚙️ Manufactura")
+      .addItem("🚀 Instalar sistema",         "instalarSistema")
+      .addItem("♻️ Reinstalar sistema",       "reinstalarSistema")
+      .addItem("🧹 Limpiar hojas obsoletas",  "limpiarHojasObsoletas")
+      .addItem("🗑️ Desinstalar sistema",      "desinstalarSistema")
       .addSeparator()
-      .addItem("➕ Nueva entrega (rápida)",    "agregarEntregaRapida")
-      .addItem("✏️ Editar fila seleccionada",  "editarFilaSeleccionada")
-      .addItem("✅ Marcar fila como pagada",   "marcarFilaPagada")
+      .addItem("➕ Nueva entrega (rápida)",   "agregarEntregaRapida")
+      .addItem("✏️ Editar fila seleccionada", "editarFilaSeleccionada")
+      .addItem("✅ Marcar fila como pagada",  "marcarFilaPagada")
       .addSeparator()
-      .addItem("🗓️ Crear quincena inicial",        "crearQuincenaInicial")
-      .addItem("📅 Cerrar quincena actual",         "cerrarQuincenaActual")
-      .addItem("🗃️ Cerrar mes manualmente",         "cerrarMes")
+      .addItem("🗓️ Crear quincena inicial",   "crearQuincenaInicial")
+      .addItem("📅 Cerrar quincena actual",   "cerrarQuincenaActual")
+      .addItem("🗃️ Cerrar mes manualmente",   "cerrarMes")
       .addSeparator()
-      .addItem("📋 Actualizar participación",      "actualizarParticipacionProgramas")
-      .addItem("🔄 Actualizar todo",               "actualizarTodo")
+      .addItem("📋 Actualizar participación", "actualizarParticipacionProgramas")
+      .addItem("🔄 Actualizar todo",          "actualizarTodo")
       .addSeparator()
-      .addItem("⏱️ Crear triggers",    "crearTriggers")
-      .addItem("⏹️ Eliminar triggers", "eliminarTriggers")
+      .addItem("⏱️ Instalar triggers",        "crearTriggers")
+      .addItem("👤 Trigger inactivos",        "instalarTriggerInactivos")
+      .addItem("⏹️ Eliminar triggers",        "eliminarTriggers")
       .addToUi();
   } catch (e) {
     // Silenciosamente ignorar si getUi no está disponible
@@ -134,7 +135,7 @@ function limpiarHojasObsoletas() {
   try {
     const ss = SpreadsheetApp.getActive();
     const ui = SpreadsheetApp.getUi();
-    const obsoletas = [SHEET_PROGRAMAS, "Resumen Mensual"];
+    const obsoletas = [SHEET_PROGRAMAS, "Resumen Mensual", SHEET_PAGOS_PEND];
     const existentes = obsoletas.filter(n => !!ss.getSheetByName(n));
 
     if (existentes.length === 0) {
@@ -165,7 +166,7 @@ function _crearEstructura_(recrear) {
   // Programas_Participacion ya no se crea — sus columnas están en Participantes Activos
   const hojasSistema = [
     SHEET_RECEPCIONES, SHEET_CATALOGOS, SHEET_INACTIVOS,
-    SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS, SHEET_PAGOS_PEND,
+    SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS,
     SHEET_DASHBOARD, SHEET_REPORTES,
     SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS,
     SHEET_HISTORIAL_PAGOS, SHEET_ARCHIVO_REC, SHEET_CATALOGO_PROD
@@ -192,7 +193,6 @@ function _crearEstructura_(recrear) {
   setup(SHEET_INACTIVOS,       _setupInactivos_);
   setup(SHEET_RESUMEN_PART,    sh => _setupResumen_(sh, "RESUMEN POR PARTICIPANTE"));
   setup(SHEET_HIST_QUINCENAS,  _setupHistorialQuincenas_);
-  setup(SHEET_PAGOS_PEND,      _setupPagosPendientes_);
   setup(SHEET_DASHBOARD,       _setupDashboard_);
   setup(SHEET_REPORTES,        _setupReportes_);
   setup(SHEET_PERIODOS,        _setupPeriodos_);
@@ -438,53 +438,40 @@ function _setupHistorialQuincenas_(sh) {
 }
 
 // ── Mejora 2: CHEQUES ─────────────────────────────────────────────────────────
-function _setupCheques_(sh) {
+function _setupPagosHoja_(sh, titulo, color) {
   sh.clear();
   sh.clearFormats();
 
-  sh.getRange("A1:I1").setValues([[
-    "Quincena", "Participante", "Creamos_ID", "Nº_Cheque",
-    "Banco", "Total_Q", "Fecha_Entrega", "Estado", "Notas"
-  ]])
-    .setBackground("#4a148c").setFontColor("#ffffff").setFontWeight("bold")
+  const COLS = 11;
+  sh.getRange(1, 1, 1, COLS).merge()
+    .setValue(titulo).setFontWeight("bold").setFontSize(13)
+    .setBackground(color).setFontColor("white")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
-  sh.setFrozenRows(1);
-  sh.setRowHeight(1, 25);
+  sh.setRowHeight(1, 32);
 
-  sh.setColumnWidth(1, 200); sh.setColumnWidth(2, 170); sh.setColumnWidth(3, 110);
-  sh.setColumnWidth(4, 120); sh.setColumnWidth(5, 140); sh.setColumnWidth(6, 110);
-  sh.setColumnWidth(7, 130); sh.setColumnWidth(8, 110); sh.setColumnWidth(9, 200);
+  sh.getRange(2, 1, 1, COLS).setValues([[
+    "Nombre", "Creamos ID", "Banco", "Tipo Cuenta", "Nº Cuenta", "Titular",
+    "Quincena_1", "Quincena_2", "Total_Mes", "Mes", "Año"
+  ]])
+    .setFontWeight("bold").setBackground(color).setFontColor("white")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.setRowHeight(2, 28);
+  sh.setFrozenRows(2);
 
-  sh.getRange("F2:F1000").setNumberFormat('"Q " #,##0.00');
-  sh.getRange("G2:G1000").setNumberFormat("yyyy-mm-dd");
-  sh.getRange("A2:I1000").setBackground("#fff8ff").setFontColor("#212121");
-  sh.getRange("A2:I1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("G3:I1000").setNumberFormat('"Q " #,##0.00');
+  sh.getRange("A3:K1000").setBackground("#fafafa").setFontColor("#212121");
+  sh.getRange("A3:K1000").setBorder(true, true, true, true, false, true, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+
+  const widths = [160, 100, 130, 110, 130, 150, 100, 100, 100, 110, 70];
+  widths.forEach((w, i) => sh.setColumnWidth(i + 1, w));
 }
 
-// ── Mejora 2: TRANSFERENCIAS ──────────────────────────────────────────────────
+function _setupCheques_(sh) {
+  _setupPagosHoja_(sh, "PAGOS POR CHEQUE", "#4a148c");
+}
+
 function _setupTransferencias_(sh) {
-  sh.clear();
-  sh.clearFormats();
-
-  sh.getRange("A1:L1").setValues([[
-    "Quincena", "Participante", "Creamos_ID", "Nº_Cuenta",
-    "Tipo_Cuenta", "Banco", "Titular", "Total_Q",
-    "Fecha_Transferencia", "Comprobante", "Estado", "Notas"
-  ]])
-    .setBackground("#006064").setFontColor("#ffffff").setFontWeight("bold")
-    .setHorizontalAlignment("center").setVerticalAlignment("middle");
-  sh.setFrozenRows(1);
-  sh.setRowHeight(1, 25);
-
-  sh.setColumnWidth(1, 200);  sh.setColumnWidth(2, 170);  sh.setColumnWidth(3, 110);
-  sh.setColumnWidth(4, 140);  sh.setColumnWidth(5, 140);  sh.setColumnWidth(6, 140);
-  sh.setColumnWidth(7, 160);  sh.setColumnWidth(8, 110);  sh.setColumnWidth(9, 150);
-  sh.setColumnWidth(10, 130); sh.setColumnWidth(11, 120); sh.setColumnWidth(12, 200);
-
-  sh.getRange("H2:H1000").setNumberFormat('"Q " #,##0.00');
-  sh.getRange("I2:I1000").setNumberFormat("yyyy-mm-dd");
-  sh.getRange("A2:L1000").setBackground("#f0fdfd").setFontColor("#212121");
-  sh.getRange("A2:L1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  _setupPagosHoja_(sh, "PAGOS POR TRANSFERENCIA", "#006064");
 }
 
 // ── Mejora 3: PROGRAMAS_PARTICIPACION ────────────────────────────────────────
@@ -954,8 +941,7 @@ function actualizarTodo() {
   actualizarEstadoPagosAutomatico();
   procesarParticipantesInactivos();
   actualizarResumenParticipantes();
-  actualizarHistorialQuincenas();      // Mejora 1 (reemplaza actualizarResumenMensual en el ciclo)
-  actualizarPagosPendientes();
+  actualizarHistorialQuincenas();
   aplicarColoresAutomaticos();
   actualizarDashboard();
   actualizarReportes();
@@ -1647,6 +1633,141 @@ function crearQuincenaInicial() {
   }
 }
 
+// Calcula montos por participante en Recepciones y los escribe en Cheques o Transferencias
+function _generarPagosQuincena_(ss, ordenQ, fechaFin) {
+  const rec = ss.getSheetByName(SHEET_RECEPCIONES);
+  const cat = ss.getSheetByName(SHEET_CATALOGOS);
+  const shT = ss.getSheetByName(SHEET_TRANSFERENCIAS);
+  const shC = ss.getSheetByName(SHEET_CHEQUES);
+  if (!rec || !cat || !shT || !shC) return;
+
+  const m       = _headerMap_(rec);
+  const dataRec = rec.getDataRange().getValues();
+  const dataCat = cat.getDataRange().getValues();
+
+  // Total por participante (solo unidades buenas × precio)
+  const totales = {};
+  for (let i = DATA_START_ROW - 1; i < dataRec.length; i++) {
+    const r = dataRec[i];
+    const p = String(r[m["participante"] - 1] || "").trim();
+    if (!p) continue;
+    totales[p] = (totales[p] || 0) + (Number(r[m["total q"] - 1]) || 0);
+  }
+
+  // Info bancaria de Participantes Activos
+  const infoPart = {};
+  for (let i = 1; i < dataCat.length; i++) {
+    const row    = dataCat[i];
+    const nombre = String(row[CAT_COL.NOMBRE] || "").trim();
+    if (!nombre) continue;
+    infoPart[nombre] = {
+      cid:        String(row[CAT_COL.ID]         || "").trim(),
+      banco:      String(row[CAT_COL.BANCO]       || "").trim(),
+      tipoCuenta: String(row[CAT_COL.TIPO_CUENTA] || "").trim(),
+      numCuenta:  String(row[CAT_COL.NUM_CUENTA]  || "").trim(),
+      titular:    String(row[CAT_COL.TITULAR]     || "").trim()
+    };
+  }
+
+  const tz   = Session.getScriptTimeZone();
+  const mes  = Utilities.formatDate(fechaFin, tz, "MMMM yyyy");
+  const anio = fechaFin.getFullYear();
+  const esQ1 = ordenQ === "Q1";
+
+  for (const [nombre, monto] of Object.entries(totales)) {
+    if (monto <= 0) continue;
+    const info  = infoPart[nombre] || {};
+    const esChq = info.tipoCuenta.toLowerCase() === "cheque";
+    const sh    = esChq ? shC : shT;
+
+    if (esQ1) {
+      sh.appendRow([nombre, info.cid, info.banco, info.tipoCuenta, info.numCuenta, info.titular,
+                    monto, "", monto, mes, anio]);
+    } else {
+      // Q2: buscar fila del mismo participante y mes para actualizar
+      const nRows = sh.getLastRow() - 2;
+      const data  = nRows > 0 ? sh.getRange(3, 1, nRows, 11).getValues() : [];
+      let found   = false;
+      for (let i = 0; i < data.length; i++) {
+        if (String(data[i][0]).trim() === nombre && String(data[i][9]).trim() === mes) {
+          const q1 = Number(data[i][6]) || 0;
+          sh.getRange(i + 3, 8).setValue(monto);      // Q2
+          sh.getRange(i + 3, 9).setValue(q1 + monto); // Total_Mes
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        sh.appendRow([nombre, info.cid, info.banco, info.tipoCuenta, info.numCuenta, info.titular,
+                      0, monto, monto, mes, anio]);
+      }
+    }
+  }
+}
+
+// Al cierre de mes: copia registros a Historial_Pagos y limpia Cheques/Transferencias
+function _archivarPagosFinMes_(ss) {
+  const shT  = ss.getSheetByName(SHEET_TRANSFERENCIAS);
+  const shC  = ss.getSheetByName(SHEET_CHEQUES);
+  const hist = ss.getSheetByName(SHEET_HISTORIAL_PAGOS);
+  if (!hist) return;
+
+  [[shT, "Transferencia"], [shC, "Cheque"]].forEach(([sh, tipo]) => {
+    if (!sh || sh.getLastRow() < 3) return;
+    const data = sh.getRange(3, 1, sh.getLastRow() - 2, 11).getValues();
+    data.forEach(row => { if (row[0]) hist.appendRow([...row, tipo]); });
+    sh.deleteRows(3, sh.getLastRow() - 2);
+  });
+}
+
+// ── Trigger instalable: cuando participante cambia a Inactivo ─────────────────
+function instalarTriggerInactivos() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === "onEditParticipantes")
+    .forEach(t => ScriptApp.deleteTrigger(t));
+
+  ScriptApp.newTrigger("onEditParticipantes")
+    .forSpreadsheet(SpreadsheetApp.getActive())
+    .onEdit()
+    .create();
+
+  SpreadsheetApp.getActive().toast("✅ Trigger de participantes instalado.", null, 4);
+}
+
+function onEditParticipantes(e) {
+  try {
+    if (!e || !e.range) return;
+    const sheet = e.range.getSheet();
+    if (sheet.getName() !== SHEET_CATALOGOS) return;
+    if (e.range.getColumn() !== CAT_COL.ESTADO + 1) return;
+    if (String(e.value || "").trim() !== "Inactivo") return;
+
+    const ui     = SpreadsheetApp.getUi();
+    const row    = e.range.getRow();
+    const nombre = sheet.getRange(row, CAT_COL.NOMBRE + 1).getValue();
+
+    const resp = ui.prompt(
+      "Participante inactivada: " + nombre,
+      "¿Cuál es el motivo de inactividad?\n(Presiona Cancelar para omitir)",
+      ui.ButtonSet.OK_CANCEL
+    );
+
+    const motivo = resp.getSelectedButton() === ui.Button.OK
+      ? (resp.getResponseText().trim() || "Sin motivo especificado")
+      : "Sin motivo especificado";
+
+    const ss     = SpreadsheetApp.getActive();
+    const shInac = ss.getSheetByName(SHEET_INACTIVOS);
+    if (!shInac) return;
+
+    const rowData = sheet.getRange(row, 1, 1, 8).getValues()[0];
+    shInac.appendRow([...rowData, motivo, new Date()]);
+    shInac.getRange(shInac.getLastRow(), 10).setNumberFormat("yyyy-mm-dd");
+  } catch (err) {
+    console.log("onEditParticipantes error: " + err.message);
+  }
+}
+
 function cerrarQuincenaActual() {
   try {
     const ss  = SpreadsheetApp.getActive();
@@ -1716,19 +1837,22 @@ function cerrarQuincenaActual() {
 
     if (ui.alert("Cerrar quincena", msgConfirm, ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
 
-    // 1. Archivar filas
+    // 1. Generar pagos en Cheques / Transferencias ANTES de borrar Recepciones
+    _generarPagosQuincena_(ss, ordenQ, fechaFin);
+
+    // 2. Archivar filas
     for (const entry of filasDeEstaQ) arc.appendRow(entry.data);
 
-    // 2. Borrar de Recepciones (de abajo hacia arriba)
+    // 3. Borrar de Recepciones (de abajo hacia arriba)
     filasDeEstaQ.map(e => e.rowIndex + 1).sort((a, b) => b - a).forEach(rn => rec.deleteRow(rn));
 
-    // 3. Marcar quincena como Cerrada
+    // 4. Marcar quincena como Cerrada
     shP.getRange(filaActiva, 5).setValue("Cerrado");
 
-    // 4. Si es Q2 → cerrar el mes automáticamente
+    // 5. Si es Q2 → cerrar el mes (archiva pagos y guarda Drive)
     if (esQ2) _ejecutarCierreMes_(ss, false);
 
-    // 5. Pedir fechas para la siguiente quincena
+    // 6. Pedir fechas para la siguiente quincena
     const siguienteOrden = esQ2 ? "Q1" : "Q2";
     const propInicio     = new Date(fechaFin); propInicio.setDate(propInicio.getDate() + 1);
     const propFin        = new Date(propInicio); propFin.setDate(propFin.getDate() + 14);
@@ -1750,7 +1874,7 @@ function cerrarQuincenaActual() {
     shP.appendRow([shP.getLastRow(), nombreNueva, nuevaInicio, nuevaFin, "Activo", siguienteOrden]);
     shP.getRange(shP.getLastRow(), 3, 1, 2).setNumberFormat("yyyy-mm-dd");
 
-    // 6. Arrastrar pendientes a la nueva quincena
+    // 7. Arrastrar pendientes a la nueva quincena
     if (filasPendient.length > 0) {
       for (const r of filasPendient) {
         const newRow = [...r];
@@ -1893,6 +2017,9 @@ function _ejecutarCierreMes_(ss, mostrarToast) {
   // Guardar copia en Drive
   DriveApp.getFileById(ss.getId()).makeCopy(nombre);
 
+  // Archivar pagos a Historial_Pagos y limpiar Cheques/Transferencias
+  _archivarPagosFinMes_(ss);
+
   // Limpiar Recepciones (las filas ya fueron borradas al cerrar quincena, pero por si acaso)
   const rec = ss.getSheetByName(SHEET_RECEPCIONES);
   if (rec && rec.getLastRow() >= DATA_START_ROW) {
@@ -1904,8 +2031,6 @@ function _ejecutarCierreMes_(ss, mostrarToast) {
   if (arc && arc.getLastRow() > 1) {
     arc.deleteRows(2, arc.getLastRow() - 1);
   }
-
-  // Historial_Pagos, Cheques y Transferencias NUNCA se limpian — son registros permanentes
 
   if (mostrarToast) {
     ss.toast("✅ Mes cerrado. Copia en Drive: '" + nombre + "'. Hojas limpiadas.", null, 8);
