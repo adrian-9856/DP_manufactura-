@@ -633,6 +633,19 @@ function agregarEntregaRapida() {
 
     const productosHistorico = _obtenerHistorico_("productos");
 
+    // Obtener quincena activa para mostrar en el form
+    const shPer = ss.getSheetByName(SHEET_PERIODOS);
+    let quincenaActiva = "Sin quincena activa";
+    if (shPer && shPer.getLastRow() > 1) {
+      const dPer = shPer.getDataRange().getValues();
+      for (let i = 1; i < dPer.length; i++) {
+        if (String(dPer[i][4] || "").trim() === "Activo") {
+          quincenaActiva = String(dPer[i][1] || "").trim();
+          break;
+        }
+      }
+    }
+
     const html = HtmlService.createHtmlOutput(`
     <!DOCTYPE html>
     <html>
@@ -641,192 +654,175 @@ function agregarEntregaRapida() {
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          font-family: 'Segoe UI', sans-serif;
           background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          padding: 20px; min-height: 100vh;
+          padding: 16px; min-height: 100vh;
         }
         .container {
-          max-width: 500px; margin: 0 auto; background: white;
-          border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); padding: 30px;
+          max-width: 460px; margin: 0 auto; background: white;
+          border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.2); padding: 22px;
         }
-        h1 { color: #333; margin-bottom: 8px; font-size: 24px; }
-        .subtitle { color: #888; font-size: 13px; margin-bottom: 25px; }
-        .form-group { margin-bottom: 18px; }
+        .header { margin-bottom: 16px; }
+        .header h1 { color: #333; font-size: 20px; margin-bottom: 4px; }
+        .badge {
+          display: inline-block; background: #ede7f6; color: #5e35b1;
+          font-size: 11px; font-weight: 600; padding: 3px 10px;
+          border-radius: 20px; margin-bottom: 4px;
+        }
+        .subtitle { color: #999; font-size: 12px; }
+        .form-group { margin-bottom: 12px; }
         label {
-          display: block; color: #555; font-weight: 600; margin-bottom: 6px;
-          font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;
+          display: block; color: #555; font-weight: 600; margin-bottom: 4px;
+          font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
         }
         select, input {
-          width: 100%; padding: 10px 12px; border: 2px solid #e0e0e0;
-          border-radius: 6px; font-size: 14px; transition: all 0.3s; font-family: inherit;
+          width: 100%; padding: 8px 10px; border: 1.5px solid #e0e0e0;
+          border-radius: 6px; font-size: 14px; transition: border-color 0.2s; font-family: inherit;
         }
-        select:focus, input:focus {
-          outline: none; border-color: #667eea;
-          box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-        select { cursor: pointer; }
-        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        select:focus, input:focus { outline: none; border-color: #667eea; }
+        select { cursor: pointer; background: white; }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .resumen {
-          background: #f5f5f5; border-left: 4px solid #667eea;
-          padding: 15px; border-radius: 6px; margin: 20px 0;
-          font-size: 13px; line-height: 1.6;
+          background: #f3f0ff; border-left: 3px solid #667eea;
+          padding: 10px 14px; border-radius: 6px; margin: 14px 0 0 0; font-size: 13px;
         }
-        .resumen-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
-        .resumen-row:last-child {
-          margin-bottom: 0; border-top: 1px solid #ddd;
-          padding-top: 8px; margin-top: 8px; font-weight: 600; color: #667eea;
+        .resumen-row { display: flex; justify-content: space-between; padding: 2px 0; }
+        .resumen-row.total {
+          border-top: 1px solid #d1c4e9; margin-top: 6px; padding-top: 6px;
+          font-weight: 700; color: #5e35b1; font-size: 14px;
         }
-        .total-q { color: #d32f2f; font-weight: bold; }
-        .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 25px; }
+        .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
         button {
-          padding: 12px; border: none; border-radius: 6px; font-size: 14px;
-          font-weight: 600; cursor: pointer; transition: all 0.3s;
-          text-transform: uppercase; letter-spacing: 0.5px;
+          padding: 10px; border: none; border-radius: 6px; font-size: 13px;
+          font-weight: 600; cursor: pointer; transition: all 0.2s;
         }
-        .btn-guardar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
-        .btn-guardar:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(102, 126, 234, 0.3); }
-        .btn-guardar:active { transform: translateY(0); }
-        .btn-cancelar { background: #e0e0e0; color: #666; }
-        .btn-cancelar:hover { background: #d0d0d0; }
-        .error { color: #d32f2f; font-size: 12px; margin-top: 4px; display: none; }
-        .loading { display: none; text-align: center; color: #667eea; margin-top: 15px; }
+        .btn-guardar { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
+        .btn-guardar:hover { opacity: 0.9; transform: translateY(-1px); }
+        .btn-cancelar { background: #f0f0f0; color: #666; }
+        .btn-cancelar:hover { background: #e0e0e0; }
+        .error { color: #e53935; font-size: 11px; margin-top: 2px; display: none; }
+        .loading { display: none; text-align: center; color: #667eea; font-size: 13px; margin-top: 10px; }
       </style>
     </head>
     <body>
       <div class="container">
-        <h1>📦 Nueva Entrega</h1>
-        <p class="subtitle">Completa los datos de la entrega &nbsp;·&nbsp; <strong>${productosConPrecio.length}</strong> producto(s) en catálogo</p>
+        <div class="header">
+          <h1>📦 Nueva Entrega</h1>
+          <span class="badge">📅 \${quincenaActiva}</span><br>
+          <span class="subtitle">\${productosConPrecio.length} producto(s) en catálogo</span>
+        </div>
 
         <div class="form-group">
-          <label for="participante">Participante *</label>
+          <label>Participante *</label>
           <select id="participante" required>
-            <option value="">-- Seleccionar participante --</option>
-            ${participantes.map(p => `<option value="${p}">${p}</option>`).join('')}
+            <option value="">— Seleccionar —</option>
+            \${participantes.map(p => '<option value="'+p+'">'+p+'</option>').join('')}
           </select>
-          <div class="error" id="err-part">Campo requerido</div>
+          <div class="error" id="err-part">Requerido</div>
         </div>
 
         <div class="form-group">
-          <label for="producto">Producto * (escribe o selecciona)</label>
-          <input type="text" id="producto" list="productos-list" placeholder="Ej: Pulsera, Mantel..." required onchange="actualizarPrecio()" oninput="actualizarPrecio()">
+          <label>Producto *</label>
+          <input type="text" id="producto" list="productos-list" placeholder="Escribe o selecciona..." required>
           <datalist id="productos-list">
-            ${productosConPrecio.map(p => `<option value="${p.nombre}" data-precio="${p.precio}">`).join('')}
-            ${productosHistorico.map(p => `<option value="${p}">`).join('')}
+            \${productosConPrecio.map(p => '<option value="'+p.nombre+'">').join('')}
+            \${productosHistorico.map(p => '<option value="'+p+'">').join('')}
           </datalist>
-          <div class="error" id="err-prod">Campo requerido</div>
+          <div class="error" id="err-prod">Requerido</div>
         </div>
 
         <div class="form-group">
-          <label for="proyecto">Proyecto / Cliente * (escribe o selecciona)</label>
-          <input type="text" id="proyecto" list="proyectos-list" placeholder="Ej: Creamos, Cliente X..." required>
+          <label>Proyecto / Cliente *</label>
+          <input type="text" id="proyecto" list="proyectos-list" placeholder="Creamos, Cliente X..." required>
           <datalist id="proyectos-list">
-            ${proyectos.map(p => `<option value="${p}">`).join('')}
+            \${proyectos.map(p => '<option value="'+p+'">').join('')}
           </datalist>
-          <div class="error" id="err-proy">Campo requerido</div>
+          <div class="error" id="err-proy">Requerido</div>
         </div>
 
         <div class="row">
           <div class="form-group">
-            <label for="buenas">Unidades Buenas *</label>
+            <label>Unidades Buenas *</label>
             <input type="number" id="buenas" min="0" value="0" required>
-            <div class="error" id="err-buenas">Campo requerido</div>
+            <div class="error" id="err-buenas">Debe ser &gt; 0</div>
           </div>
           <div class="form-group">
-            <label for="rechazadas">Unidades Rechazadas *</label>
-            <input type="number" id="rechazadas" min="0" value="0" required>
+            <label>Unidades Rechazadas</label>
+            <input type="number" id="rechazadas" min="0" value="0">
           </div>
         </div>
 
         <div class="form-group">
-          <label for="precio">Precio Unitario (Q) *</label>
+          <label>Precio Unitario (Q) *</label>
           <input type="number" id="precio" min="0" step="0.01" value="0" required>
-          <div class="error" id="err-precio">Campo requerido</div>
-        </div>
-
-        <div class="form-group">
-          <label for="metodo">Método de Pago (opcional)</label>
-          <input type="text" id="metodo" list="metodos-list" placeholder="Ej: Efectivo, Transferencia...">
-          <datalist id="metodos-list">
-            ${metodos.map(m => `<option value="${m}">`).join('')}
-          </datalist>
+          <div class="error" id="err-precio">Debe ser &gt; 0</div>
         </div>
 
         <div class="resumen" id="resumen" style="display:none;">
-          <div class="resumen-row"><span>Unidades Buenas:</span><span id="res-buenas">0</span></div>
-          <div class="resumen-row"><span>Precio Unitario:</span><span>Q <span id="res-precio">0.00</span></span></div>
-          <div class="resumen-row"><span>Total a Pagar:</span><span class="total-q">Q <span id="res-total">0.00</span></span></div>
+          <div class="resumen-row"><span>Unidades buenas:</span><span id="res-buenas">0</span></div>
+          <div class="resumen-row"><span>Precio unitario:</span><span>Q <span id="res-precio">0.00</span></span></div>
+          <div class="resumen-row total"><span>Total a pagar:</span><span>Q <span id="res-total">0.00</span></span></div>
         </div>
 
         <div class="buttons">
           <button class="btn-guardar" onclick="guardarEntrega()">✅ Guardar</button>
-          <button class="btn-cancelar" onclick="google.script.host.close()">❌ Cancelar</button>
+          <button class="btn-cancelar" onclick="google.script.host.close()">✕ Cancelar</button>
         </div>
-        <div class="loading" id="loading">Guardando entrega...</div>
+        <div class="loading" id="loading">⏳ Guardando...</div>
       </div>
 
       <script>
-        const productosConPrecio = ${JSON.stringify(productosConPrecio)};
+        const productosConPrecio = \${JSON.stringify(productosConPrecio)};
 
-        ['buenas', 'precio'].forEach(id => {
-          document.getElementById(id).addEventListener('input', actualizarResumen);
-        });
+        ['buenas','precio'].forEach(id =>
+          document.getElementById(id).addEventListener('input', actualizarResumen)
+        );
+        document.getElementById('producto').addEventListener('change', actualizarPrecio);
+        document.getElementById('producto').addEventListener('input',  actualizarPrecio);
 
-        // Buscar precio con pequeño delay para que el datalist termine de poner el valor
         function actualizarPrecio() {
           setTimeout(function() {
-            const val     = document.getElementById('producto').value.trim().toLowerCase();
-            const campo   = document.getElementById('precio');
+            const val   = document.getElementById('producto').value.trim().toLowerCase();
+            const campo = document.getElementById('precio');
             if (!val) return;
             const match = productosConPrecio.find(p => p.nombre.trim().toLowerCase() === val);
-            if (match && match.precio > 0) {
-              campo.value = match.precio;
-              actualizarResumen();
-            }
+            if (match && match.precio > 0) { campo.value = match.precio; actualizarResumen(); }
           }, 80);
         }
 
-        // Disparar también al cambiar el participante (por si el producto ya está escrito)
-        document.getElementById('producto').addEventListener('change', actualizarPrecio);
-
         function actualizarResumen() {
-          const buenas = Number(document.getElementById('buenas').value) || 0;
-          const precio = Number(document.getElementById('precio').value) || 0;
-          const total  = buenas * precio;
-          document.getElementById('res-buenas').textContent = buenas;
-          document.getElementById('res-precio').textContent = precio.toFixed(2);
-          document.getElementById('res-total').textContent  = total.toFixed(2);
-          if (buenas > 0 || precio > 0) document.getElementById('resumen').style.display = 'block';
+          const b = Number(document.getElementById('buenas').value) || 0;
+          const p = Number(document.getElementById('precio').value) || 0;
+          document.getElementById('res-buenas').textContent = b;
+          document.getElementById('res-precio').textContent = p.toFixed(2);
+          document.getElementById('res-total').textContent  = (b * p).toFixed(2);
+          document.getElementById('resumen').style.display  = (b > 0 || p > 0) ? 'block' : 'none';
         }
 
         function validar() {
-          const participante = document.getElementById('participante').value.trim();
-          const producto     = document.getElementById('producto').value.trim();
-          const proyecto     = document.getElementById('proyecto').value.trim();
-          const buenas       = Number(document.getElementById('buenas').value) || 0;
-          const precio       = Number(document.getElementById('precio').value) || 0;
-
-          document.getElementById('err-part').style.display   = !participante ? 'block' : 'none';
-          document.getElementById('err-prod').style.display   = !producto     ? 'block' : 'none';
-          document.getElementById('err-proy').style.display   = !proyecto     ? 'block' : 'none';
-          document.getElementById('err-buenas').style.display = (buenas <= 0) ? 'block' : 'none';
-          document.getElementById('err-precio').style.display = (precio <= 0) ? 'block' : 'none';
-
-          return participante && producto && proyecto && buenas > 0 && precio > 0;
+          const part = document.getElementById('participante').value.trim();
+          const prod = document.getElementById('producto').value.trim();
+          const proy = document.getElementById('proyecto').value.trim();
+          const b    = Number(document.getElementById('buenas').value) || 0;
+          const p    = Number(document.getElementById('precio').value) || 0;
+          document.getElementById('err-part').style.display   = !part     ? 'block' : 'none';
+          document.getElementById('err-prod').style.display   = !prod     ? 'block' : 'none';
+          document.getElementById('err-proy').style.display   = !proy     ? 'block' : 'none';
+          document.getElementById('err-buenas').style.display = (b <= 0)  ? 'block' : 'none';
+          document.getElementById('err-precio').style.display = (p <= 0)  ? 'block' : 'none';
+          return part && prod && proy && b > 0 && p > 0;
         }
 
         function guardarEntrega() {
-          if (!validar()) { alert('⚠️ Por favor completa todos los campos requeridos'); return; }
+          if (!validar()) return;
           const btn = document.querySelector('.btn-guardar');
-          btn.disabled = true;
-          btn.style.opacity = '0.5';
+          btn.disabled = true; btn.style.opacity = '0.6';
           document.getElementById('loading').style.display = 'block';
-
           google.script.run
-            .withSuccessHandler(function() { google.script.host.close(); })
-            .withFailureHandler(function(err) {
-              alert('Error al guardar: ' + err);
-              btn.disabled = false;
-              btn.style.opacity = '1';
+            .withSuccessHandler(() => google.script.host.close())
+            .withFailureHandler(err => {
+              alert('Error: ' + err);
+              btn.disabled = false; btn.style.opacity = '1';
               document.getElementById('loading').style.display = 'none';
             })
             .guardarEntregaServer(
@@ -836,15 +832,15 @@ function agregarEntregaRapida() {
               Number(document.getElementById('buenas').value),
               Number(document.getElementById('rechazadas').value),
               Number(document.getElementById('precio').value),
-              document.getElementById('metodo').value.trim()
+              ""
             );
         }
       </script>
     </body>
     </html>
   `)
-    .setWidth(540)
-    .setHeight(720);
+    .setWidth(500)
+    .setHeight(640);
 
     SpreadsheetApp.getUi().showModalDialog(html, "Nueva Entrega Rápida");
   } catch (e) {
@@ -1785,30 +1781,89 @@ function onEditParticipantes(e) {
     if (e.range.getColumn() !== CAT_COL.ESTADO + 1) return;
     if (String(e.value || "").trim() !== "Inactivo") return;
 
-    const ui     = SpreadsheetApp.getUi();
     const row    = e.range.getRow();
     const nombre = sheet.getRange(row, CAT_COL.NOMBRE + 1).getValue();
-
-    const resp = ui.prompt(
-      "Participante inactivada: " + nombre,
-      "¿Cuál es el motivo de inactividad?\n(Presiona Cancelar para omitir)",
-      ui.ButtonSet.OK_CANCEL
-    );
-
-    const motivo = resp.getSelectedButton() === ui.Button.OK
-      ? (resp.getResponseText().trim() || "Sin motivo especificado")
-      : "Sin motivo especificado";
-
-    const ss     = SpreadsheetApp.getActive();
-    const shInac = ss.getSheetByName(SHEET_INACTIVOS);
-    if (!shInac) return;
-
-    const rowData = sheet.getRange(row, 1, 1, 8).getValues()[0];
-    shInac.appendRow([...rowData, motivo, new Date()]);
-    shInac.getRange(shInac.getLastRow(), 10).setNumberFormat("yyyy-mm-dd");
+    mostrarFormularioInactivo(nombre, row);
   } catch (err) {
     console.log("onEditParticipantes error: " + err.message);
   }
+}
+
+function mostrarFormularioInactivo(nombre, rowNum) {
+  const motivos = [
+    "Otras prioridades",
+    "Horario laboral",
+    "Retos/problemas familiares",
+    "Violencia de parte de la pareja/violencia de género",
+    "Migración (por motivos económicos/por violencia)",
+    "Embarazo",
+    "Retos/problemas de salud física",
+    "Retos/problemas de salud mental",
+    "Retos/Problemas legales/Privación de libertad",
+    "Falta de apoyo",
+    "Compromisos religiosos",
+    "Problemas financieros",
+    "Violencia comunitaria",
+    "No querer continuar en el proceso",
+    "Descontento con la organización",
+    "Asesinato/Fallecimiento",
+    "Cuidado de terceras personas",
+    "Falta de adaptabilidad",
+    "Pérdida de contacto / Inaccesibilidad",
+    "Expectativas no alineadas con el programa",
+    "Cambio de prioridad personal",
+    "Sobrecarga personal / Dificultad para sostener el proceso"
+  ];
+
+  const opcionesHtml = motivos.map(m => '<option value="' + m + '">' + m + '</option>').join('');
+
+  const html = HtmlService.createHtmlOutput(
+    '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>' +
+    '* { margin:0; padding:0; box-sizing:border-box; }' +
+    'body { font-family:"Segoe UI",sans-serif; background:#f5f5f5; padding:20px; }' +
+    '.container { background:white; border-radius:10px; padding:22px; box-shadow:0 4px 20px rgba(0,0,0,0.1); }' +
+    'h2 { color:#333; font-size:17px; margin-bottom:4px; }' +
+    '.nombre { color:#5e35b1; font-weight:700; font-size:15px; margin-bottom:16px; }' +
+    'label { display:block; font-size:11px; font-weight:600; color:#666; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px; }' +
+    'select, textarea { width:100%; padding:9px 12px; border:1.5px solid #e0e0e0; border-radius:6px; font-size:13px; font-family:inherit; background:white; }' +
+    'select { cursor:pointer; } select:focus, textarea:focus { outline:none; border-color:#7e57c2; }' +
+    'textarea { resize:vertical; margin-top:12px; }' +
+    '.buttons { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:16px; }' +
+    'button { padding:10px; border:none; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; }' +
+    '.btn-ok { background:linear-gradient(135deg,#7e57c2,#5e35b1); color:white; }' +
+    '.btn-no { background:#f0f0f0; color:#666; }' +
+    '</style></head><body><div class="container">' +
+    '<h2>Participante inactiva</h2>' +
+    '<p class="nombre">👤 ' + nombre + '</p>' +
+    '<label>Motivo de inactividad *</label>' +
+    '<select id="motivo"><option value="">— Seleccionar motivo —</option>' + opcionesHtml + '</select>' +
+    '<textarea id="notas" rows="2" placeholder="Notas adicionales (opcional)..."></textarea>' +
+    '<div class="buttons">' +
+    '<button class="btn-ok" onclick="guardar()">✅ Guardar</button>' +
+    '<button class="btn-no" onclick="google.script.host.close()">✕ Cancelar</button>' +
+    '</div></div>' +
+    '<script>' +
+    'function guardar() {' +
+    '  var m = document.getElementById("motivo").value;' +
+    '  if (!m) { alert("Selecciona un motivo"); return; }' +
+    '  var n = document.getElementById("notas").value.trim();' +
+    '  var t = n ? m + " — " + n : m;' +
+    '  google.script.run.withSuccessHandler(function(){ google.script.host.close(); }).guardarMotivoInactivo(t, ' + rowNum + ');' +
+    '}' +
+    '<\/script></body></html>'
+  ).setWidth(440).setHeight(330);
+
+  SpreadsheetApp.getUi().showModalDialog(html, "Motivo de inactividad");
+}
+
+function guardarMotivoInactivo(motivo, rowNum) {
+  const ss     = SpreadsheetApp.getActive();
+  const shAct  = ss.getSheetByName(SHEET_CATALOGOS);
+  const shInac = ss.getSheetByName(SHEET_INACTIVOS);
+  if (!shAct || !shInac) return;
+  const rowData = shAct.getRange(rowNum, 1, 1, 8).getValues()[0];
+  shInac.appendRow([...rowData, motivo, new Date()]);
+  shInac.getRange(shInac.getLastRow(), 10).setNumberFormat("yyyy-mm-dd");
 }
 
 function cerrarQuincenaActual() {
