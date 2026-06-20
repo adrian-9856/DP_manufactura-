@@ -131,57 +131,49 @@ function desinstalarSistema() {
 
 function _crearEstructura_(recrear) {
   const ss = SpreadsheetApp.getActive();
+
+  // Programas_Participacion ya no se crea — sus columnas están en Participantes Activos
   const hojasSistema = [
     SHEET_RECEPCIONES, SHEET_CATALOGOS, SHEET_INACTIVOS,
     SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS, SHEET_PAGOS_PEND,
     SHEET_DASHBOARD, SHEET_REPORTES,
     SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS,
-    SHEET_PROGRAMAS, SHEET_HISTORIAL_PAGOS,
-    SHEET_ARCHIVO_REC, SHEET_CATALOGO_PROD
+    SHEET_HISTORIAL_PAGOS, SHEET_ARCHIVO_REC, SHEET_CATALOGO_PROD
   ];
 
   if (recrear) {
+    // Reinstalar completo: borra solo si el usuario lo pidió explícitamente
     hojasSistema.forEach(n => {
       const sh = ss.getSheetByName(n);
       if (sh) ss.deleteSheet(sh);
     });
   }
 
-  const rec  = _getOrCreate_(SHEET_RECEPCIONES);
-  const cat  = _getOrCreate_(SHEET_CATALOGOS);
-  const ina  = _getOrCreate_(SHEET_INACTIVOS);
-  const rp   = _getOrCreate_(SHEET_RESUMEN_PART);
-  const hq   = _getOrCreate_(SHEET_HIST_QUINCENAS);
-  const pp   = _getOrCreate_(SHEET_PAGOS_PEND);
-  const db   = _getOrCreate_(SHEET_DASHBOARD);
-  const rep  = _getOrCreate_(SHEET_REPORTES);
-  const per  = _getOrCreate_(SHEET_PERIODOS);
-  const chq  = _getOrCreate_(SHEET_CHEQUES);
-  const tra  = _getOrCreate_(SHEET_TRANSFERENCIAS);
-  const prog = _getOrCreate_(SHEET_PROGRAMAS);
+  // Solo llama setup en hojas recién creadas — las existentes conservan sus datos
+  function setup(name, fn) {
+    const existia = !!ss.getSheetByName(name);
+    const sh = existia ? ss.getSheetByName(name) : ss.insertSheet(name);
+    if (!existia || recrear) fn(sh);
+    return sh;
+  }
 
-  const hist = _getOrCreate_(SHEET_HISTORIAL_PAGOS);
-  const arc  = _getOrCreate_(SHEET_ARCHIVO_REC);
-  const cat2 = _getOrCreate_(SHEET_CATALOGO_PROD);
-
-  _setupRecepciones_(rec);
-  _setupCatalogos_(cat);
-  _setupInactivos_(ina);
-  _setupResumen_(rp, "RESUMEN POR PARTICIPANTE");
-  _setupHistorialQuincenas_(hq);
-  _setupPagosPendientes_(pp);
-  _setupDashboard_(db);
-  _setupReportes_(rep);
-  _setupPeriodos_(per);
-  _setupCheques_(chq);
-  _setupTransferencias_(tra);
-  _setupProgramas_(prog);
-  _setupHistorialPagos_(hist);
-  _setupArchivo_(arc);
-  _setupCatalogo_(cat2);
+  setup(SHEET_RECEPCIONES,     _setupRecepciones_);
+  setup(SHEET_CATALOGOS,       _setupCatalogos_);
+  setup(SHEET_INACTIVOS,       _setupInactivos_);
+  setup(SHEET_RESUMEN_PART,    sh => _setupResumen_(sh, "RESUMEN POR PARTICIPANTE"));
+  setup(SHEET_HIST_QUINCENAS,  _setupHistorialQuincenas_);
+  setup(SHEET_PAGOS_PEND,      _setupPagosPendientes_);
+  setup(SHEET_DASHBOARD,       _setupDashboard_);
+  setup(SHEET_REPORTES,        _setupReportes_);
+  setup(SHEET_PERIODOS,        _setupPeriodos_);
+  setup(SHEET_CHEQUES,         _setupCheques_);
+  setup(SHEET_TRANSFERENCIAS,  _setupTransferencias_);
+  setup(SHEET_HISTORIAL_PAGOS, _setupHistorialPagos_);
+  setup(SHEET_ARCHIVO_REC,     _setupArchivo_);
+  setup(SHEET_CATALOGO_PROD,   _setupCatalogo_);
 
   crearValidacionesDatos();
-  crearQuincenaInicial();  // crea la quincena del período actual si no existe
+  crearQuincenaInicial();
   actualizarTodo();
 }
 
