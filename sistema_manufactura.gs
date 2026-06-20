@@ -37,7 +37,7 @@ const RECEPCIONES_HEADERS = [
 const CAT_COL = {
   ID:             0,  // A – Creamos ID
   NOMBRE:         1,  // B – Nombre Completo
-  ESTADO:         2,  // C – Estado
+  ETAPA:          2,  // C – Estado
   NUM_CUENTA:     3,  // D – Nº Cuenta
   TIPO_CUENTA:    4,  // E – Tipo Cuenta
   BANCO:          5,  // F – Banco
@@ -280,7 +280,7 @@ function _setupCatalogos_(sh) {
   sh.clearFormats();
 
   // A–H: datos personales/bancarios
-  sh.getRange("A1:H1").setValues([["Creamos ID", "Nombre Completo", "Estado", "Nº Cuenta", "Tipo Cuenta", "Banco", "Titular", "DPI"]])
+  sh.getRange("A1:H1").setValues([["Creamos ID", "Nombre Completo", "Etapa", "Nº Cuenta", "Tipo Cuenta", "Banco", "Titular", "DPI"]])
     .setBackground("#263238").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
@@ -320,7 +320,7 @@ function _setupCatalogos_(sh) {
 
   sh.getRange("C2:C1000").setDataValidation(
     SpreadsheetApp.newDataValidation()
-      .requireValueInList(["Activo", "Inactivo"])
+      .requireValueInList(["Inscritx", "Retiradx", "Empleadx", "Ciclo de Vida Terminado"])
       .setAllowInvalid(false).build()
   );
   sh.getRange("E2:E1000").setDataValidation(
@@ -334,7 +334,7 @@ function _setupInactivos_(sh) {
   sh.clear();
   sh.clearFormats();
 
-  sh.getRange("A1:H1").setValues([["Creamos ID", "Nombre Completo", "Estado", "Nº Cuenta", "Tipo Cuenta", "Banco", "Titular", "DPI"]])
+  sh.getRange("A1:H1").setValues([["Creamos ID", "Nombre Completo", "Etapa", "Nº Cuenta", "Tipo Cuenta", "Banco", "Titular", "DPI"]])
     .setBackground("#5d4037").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
@@ -1211,7 +1211,7 @@ function procesarParticipantesInactivos() {
   const rowsAEliminar = [];
 
   for (let i = data.length - 1; i >= 1; i--) {
-    if (data[i][CAT_COL.ESTADO] === "Inactivo") {
+    if (data[i][CAT_COL.ETAPA] === "Retiradx") {
       shIna.appendRow(data[i].slice(0, 8));
       rowsAEliminar.push(i + 1);
     }
@@ -1778,8 +1778,8 @@ function onEditParticipantes(e) {
     if (!e || !e.range) return;
     const sheet = e.range.getSheet();
     if (sheet.getName() !== SHEET_CATALOGOS) return;
-    if (e.range.getColumn() !== CAT_COL.ESTADO + 1) return;
-    if (String(e.value || "").trim() !== "Inactivo") return;
+    if (e.range.getColumn() !== CAT_COL.ETAPA + 1) return;
+    if (String(e.value || "").trim() !== "Retiradx") return;
 
     const row    = e.range.getRow();
     const nombre = sheet.getRange(row, CAT_COL.NOMBRE + 1).getValue();
