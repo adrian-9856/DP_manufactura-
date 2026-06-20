@@ -57,9 +57,10 @@ function onOpen() {
   try {
     SpreadsheetApp.getUi()
       .createMenu("⚙️ Automatización")
-      .addItem("🚀 Instalar sistema",     "instalarSistema")
-      .addItem("♻️ Reinstalar sistema",   "reinstalarSistema")
-      .addItem("🗑️ Desinstalar sistema",  "desinstalarSistema")
+      .addItem("🚀 Instalar sistema",          "instalarSistema")
+      .addItem("♻️ Reinstalar sistema",        "reinstalarSistema")
+      .addItem("🧹 Limpiar hojas obsoletas",   "limpiarHojasObsoletas")
+      .addItem("🗑️ Desinstalar sistema",       "desinstalarSistema")
       .addSeparator()
       .addItem("➕ Nueva entrega (rápida)",    "agregarEntregaRapida")
       .addItem("✏️ Editar fila seleccionada",  "editarFilaSeleccionada")
@@ -126,6 +127,35 @@ function desinstalarSistema() {
     SpreadsheetApp.getActive().toast("🗑️ Sistema desinstalado", "Listo", 4);
   } catch (e) {
     console.log("Error al desinstalar: " + e.message);
+  }
+}
+
+function limpiarHojasObsoletas() {
+  try {
+    const ss = SpreadsheetApp.getActive();
+    const ui = SpreadsheetApp.getUi();
+    const obsoletas = [SHEET_PROGRAMAS, "Resumen Mensual"];
+    const existentes = obsoletas.filter(n => !!ss.getSheetByName(n));
+
+    if (existentes.length === 0) {
+      return ss.toast("✅ No hay hojas obsoletas.", null, 3);
+    }
+
+    const ok = ui.alert(
+      "🧹 Limpiar hojas obsoletas",
+      "Se eliminarán estas hojas (sus datos YA están en Participantes Activos):\n\n• " + existentes.join("\n• ") + "\n\n¿Continuar?",
+      ui.ButtonSet.YES_NO
+    );
+    if (ok !== ui.Button.YES) return;
+
+    existentes.forEach(n => {
+      const sh = ss.getSheetByName(n);
+      if (sh) ss.deleteSheet(sh);
+    });
+
+    ss.toast("✅ " + existentes.length + " hoja(s) obsoleta(s) eliminada(s).", null, 4);
+  } catch (e) {
+    SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
   }
 }
 
@@ -556,14 +586,19 @@ function agregarEntregaRapida() {
     const proyectos     = _obtenerHistorico_("proyectos");
     const metodos       = _obtenerHistorico_("metodos");
 
-    // Leer productos y precios del Catálogo_Productos (col B = nombre, col C = precio, col D = activo)
+    // Leer productos y precios del Catálogo_Productos (col B = nombre, col C = precio)
     const productosConPrecio = [];
     const catProd = ss.getSheetByName(SHEET_CATALOGO_PROD);
     if (catProd && catProd.getLastRow() > 1) {
       catProd.getRange(2, 1, catProd.getLastRow() - 1, 3).getValues().forEach(r => {
-        const prod   = String(r[1] || "").trim();
-        const precio = Number(r[2]) || 0;
-        if (prod) productosConPrecio.push({ nombre: prod, precio });
+        const prod = String(r[1] || "").trim();
+        if (!prod) return;
+        // Maneja tanto número puro (10.5) como texto con formato ("Q 10.50")
+        const raw    = r[2];
+        const precio = typeof raw === 'number'
+          ? raw
+          : parseFloat(String(raw).replace(/[^0-9.]/g, '')) || 0;
+        productosConPrecio.push({ nombre: prod, precio });
       });
     }
 
@@ -631,7 +666,7 @@ function agregarEntregaRapida() {
     <body>
       <div class="container">
         <h1>📦 Nueva Entrega</h1>
-        <p class="subtitle">Completa los datos de la entrega</p>
+        <p class="subtitle">Completa los datos de la entrega &nbsp;·&nbsp; <strong>${productosConPrecio.length}</strong> producto(s) en catálogo</p>
 
         <div class="form-group">
           <label for="participante">Participante *</label>
@@ -707,16 +742,22 @@ function agregarEntregaRapida() {
           document.getElementById(id).addEventListener('input', actualizarResumen);
         });
 
+        // Buscar precio con pequeño delay para que el datalist termine de poner el valor
         function actualizarPrecio() {
-          const productoInput = document.getElementById('producto').value.trim().toLowerCase();
-          const precioInput   = document.getElementById('precio');
-          if (!productoInput) return;
-          const producto = productosConPrecio.find(p => p.nombre.toLowerCase() === productoInput);
-          if (producto && producto.precio > 0) {
-            precioInput.value = producto.precio;
-            actualizarResumen();
-          }
+          setTimeout(function() {
+            const val     = document.getElementById('producto').value.trim().toLowerCase();
+            const campo   = document.getElementById('precio');
+            if (!val) return;
+            const match = productosConPrecio.find(p => p.nombre.trim().toLowerCase() === val);
+            if (match && match.precio > 0) {
+              campo.value = match.precio;
+              actualizarResumen();
+            }
+          }, 80);
         }
+
+        // Disparar también al cambiar el participante (por si el producto ya está escrito)
+        document.getElementById('producto').addEventListener('change', actualizarPrecio);
 
         function actualizarResumen() {
           const buenas = Number(document.getElementById('buenas').value) || 0;
