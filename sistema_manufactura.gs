@@ -61,6 +61,7 @@ function onOpen() {
       .addItem("♻️ Reinstalar sistema",       "reinstalarSistema")
       .addItem("🗑️ Eliminar hojas obsoletas", "limpiarHojasObsoletas")
       .addItem("🔄 Actualizar Cheques/Transf.", "actualizarHojasNuevas")
+      .addItem("🔁 Migrar datos existentes",  "migrarDatosExistentes")
       .addItem("⛔ Desinstalar sistema",       "desinstalarSistema")
       .addSeparator()
       .addItem("➕ Nueva entrega (rápida)",   "agregarEntregaRapida")
@@ -80,6 +81,88 @@ function onOpen() {
       .addToUi();
   } catch (e) {
     // Silenciosamente ignorar si getUi no está disponible
+  }
+}
+
+// ========================= MIGRACIÓN DE DATOS EXISTENTES =========================
+// Aplica cambios de estructura sin borrar datos: encabezados, dropdowns, valores de etapa
+function migrarDatosExistentes() {
+  try {
+    const ss  = SpreadsheetApp.getActive();
+    const ui  = SpreadsheetApp.getUi();
+    const log = [];
+
+    // 1. Participantes Activos: encabezado C1 y valores Estado → Etapa
+    const shAct = ss.getSheetByName(SHEET_CATALOGOS);
+    if (shAct) {
+      // Encabezado
+      const hdrs = shAct.getRange(1, 1, 1, 15).getValues()[0];
+      if (hdrs[2] === "Estado") {
+        shAct.getRange(1, 3).setValue("Etapa");
+        log.push("Participantes Activos: encabezado C → Etapa");
+      }
+      // Valores de la columna
+      const lastRow = shAct.getLastRow();
+      if (lastRow > 1) {
+        const vals = shAct.getRange(2, 3, lastRow - 1, 1).getValues();
+        const newVals = vals.map(([v]) => {
+          if (v === "Activo")   return ["Inscritx"];
+          if (v === "Inactivo") return ["Retiradx"];
+          return [v];
+        });
+        shAct.getRange(2, 3, lastRow - 1, 1).setValues(newVals);
+        log.push("Participantes Activos: Activo → Inscritx, Inactivo → Retiradx");
+      }
+      // Dropdown
+      const rule = SpreadsheetApp.newDataValidation()
+        .requireValueInList(["Inscritx", "Retiradx", "Empleadx", "Ciclo de Vida Terminado"])
+        .setAllowInvalid(false).build();
+      shAct.getRange("C2:C1000").setDataValidation(rule);
+      log.push("Participantes Activos: dropdown de Etapa actualizado");
+    }
+
+    // 2. Participantes Inactivos: encabezado C1
+    const shIna = ss.getSheetByName(SHEET_INACTIVOS);
+    if (shIna) {
+      const hdrs = shIna.getRange(1, 1, 1, 8).getValues()[0];
+      if (hdrs[2] === "Estado") {
+        shIna.getRange(1, 3).setValue("Etapa");
+        log.push("Participantes Inactivos: encabezado C → Etapa");
+      }
+      if (shIna.getLastRow() > 1) {
+        const vals = shIna.getRange(2, 3, shIna.getLastRow() - 1, 1).getValues();
+        const newVals = vals.map(([v]) => {
+          if (v === "Activo")   return ["Inscritx"];
+          if (v === "Inactivo") return ["Retiradx"];
+          return [v];
+        });
+        shIna.getRange(2, 3, shIna.getLastRow() - 1, 1).setValues(newVals);
+      }
+    }
+
+    // 3. Cheques y Transferencias: nueva estructura (solo si están vacías)
+    [SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_HISTORIAL_PAGOS].forEach(nombre => {
+      const sh = ss.getSheetByName(nombre);
+      if (sh && sh.getLastRow() <= 2) {
+        if (nombre === SHEET_CHEQUES)        _setupCheques_(sh);
+        if (nombre === SHEET_TRANSFERENCIAS) _setupTransferencias_(sh);
+        if (nombre === SHEET_HISTORIAL_PAGOS)_setupHistorialPagos_(sh);
+        log.push(nombre + ": estructura actualizada");
+      }
+    });
+
+    // 4. Eliminar Archivo_Recepciones si existe
+    const shArc = ss.getSheetByName(SHEET_ARCHIVO_REC);
+    if (shArc) {
+      ss.deleteSheet(shArc);
+      log.push("Archivo_Recepciones: eliminada");
+    }
+
+    const resumen = log.length ? log.join("\n• ") : "Nada que migrar — todo estaba al día.";
+    ui.alert("✅ Migración completada", "• " + resumen, ui.ButtonSet.OK);
+
+  } catch (e) {
+    SpreadsheetApp.getActive().toast("❌ Error en migración: " + e.message, null, 5);
   }
 }
 
