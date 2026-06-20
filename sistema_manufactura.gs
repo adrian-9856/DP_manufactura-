@@ -59,8 +59,9 @@ function onOpen() {
       .createMenu("⚙️ Manufactura")
       .addItem("🚀 Instalar sistema",         "instalarSistema")
       .addItem("♻️ Reinstalar sistema",       "reinstalarSistema")
-      .addItem("🧹 Limpiar hojas obsoletas",  "limpiarHojasObsoletas")
-      .addItem("🗑️ Desinstalar sistema",      "desinstalarSistema")
+      .addItem("🗑️ Eliminar hojas obsoletas", "limpiarHojasObsoletas")
+      .addItem("🔄 Actualizar Cheques/Transf.", "actualizarHojasNuevas")
+      .addItem("⛔ Desinstalar sistema",       "desinstalarSistema")
       .addSeparator()
       .addItem("➕ Nueva entrega (rápida)",   "agregarEntregaRapida")
       .addItem("✏️ Editar fila seleccionada", "editarFilaSeleccionada")
@@ -143,8 +144,8 @@ function limpiarHojasObsoletas() {
     }
 
     const ok = ui.alert(
-      "🧹 Limpiar hojas obsoletas",
-      "Se eliminarán estas hojas (sus datos YA están en Participantes Activos):\n\n• " + existentes.join("\n• ") + "\n\n¿Continuar?",
+      "🗑️ Eliminar hojas obsoletas",
+      "Se eliminarán permanentemente:\n\n• " + existentes.join("\n• ") + "\n\n¿Continuar?",
       ui.ButtonSet.YES_NO
     );
     if (ok !== ui.Button.YES) return;
@@ -154,7 +155,45 @@ function limpiarHojasObsoletas() {
       if (sh) ss.deleteSheet(sh);
     });
 
-    ss.toast("✅ " + existentes.length + " hoja(s) obsoleta(s) eliminada(s).", null, 4);
+    ss.toast("✅ " + existentes.length + " hoja(s) eliminada(s).", null, 4);
+  } catch (e) {
+    SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
+  }
+}
+
+// Aplica la nueva estructura a Cheques y Transferencias (seguro: solo si están vacías o con OK del usuario)
+function actualizarHojasNuevas() {
+  try {
+    const ss = SpreadsheetApp.getActive();
+    const ui = SpreadsheetApp.getUi();
+
+    const hojas = [
+      { nombre: SHEET_CHEQUES,        fn: _setupCheques_ },
+      { nombre: SHEET_TRANSFERENCIAS, fn: _setupTransferencias_ }
+    ];
+
+    const conDatos = hojas.filter(h => {
+      const sh = ss.getSheetByName(h.nombre);
+      return sh && sh.getLastRow() > 2;
+    });
+
+    if (conDatos.length > 0) {
+      const aviso = ui.alert(
+        "⚠️ Hojas con datos",
+        "Estas hojas tienen datos que se borrarán al actualizar:\n\n• " +
+        conDatos.map(h => h.nombre).join("\n• ") +
+        "\n\nLos datos ya guardados en Historial_Pagos no se afectan.\n\n¿Continuar?",
+        ui.ButtonSet.YES_NO
+      );
+      if (aviso !== ui.Button.YES) return;
+    }
+
+    hojas.forEach(h => {
+      const sh = ss.getSheetByName(h.nombre) || ss.insertSheet(h.nombre);
+      h.fn(sh);
+    });
+
+    ss.toast("✅ Cheques y Transferencias actualizadas con la nueva estructura.", null, 5);
   } catch (e) {
     SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
   }
