@@ -1713,8 +1713,6 @@ function cerrarQuincenaActual() {
     SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
   }
 }
-  }
-}
 
 function actualizarHistorialQuincenas() {
   const ss   = SpreadsheetApp.getActive();
