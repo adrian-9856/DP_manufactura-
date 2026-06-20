@@ -101,6 +101,8 @@ function migrarDatosExistentes() {
         shAct.getRange(1, 3).setValue("Etapa");
         log.push("Participantes Activos: encabezado C → Etapa");
       }
+      // Quitar validación vieja antes de escribir nuevos valores
+      shAct.getRange("C2:C1000").clearDataValidations();
       // Valores de la columna
       const lastRow = shAct.getLastRow();
       if (lastRow > 1) {
@@ -113,7 +115,7 @@ function migrarDatosExistentes() {
         shAct.getRange(2, 3, lastRow - 1, 1).setValues(newVals);
         log.push("Participantes Activos: Activo → Inscritx, Inactivo → Retiradx");
       }
-      // Dropdown
+      // Aplicar nueva validación
       const rule = SpreadsheetApp.newDataValidation()
         .requireValueInList(["Inscritx", "Retiradx", "Empleadx", "Ciclo de Vida Terminado"])
         .setAllowInvalid(false).build();
@@ -129,6 +131,8 @@ function migrarDatosExistentes() {
         shIna.getRange(1, 3).setValue("Etapa");
         log.push("Participantes Inactivos: encabezado C → Etapa");
       }
+      // Quitar validación vieja antes de escribir
+      shIna.getRange("C2:C1000").clearDataValidations();
       if (shIna.getLastRow() > 1) {
         const vals = shIna.getRange(2, 3, shIna.getLastRow() - 1, 1).getValues();
         const newVals = vals.map(([v]) => {
@@ -137,6 +141,7 @@ function migrarDatosExistentes() {
           return [v];
         });
         shIna.getRange(2, 3, shIna.getLastRow() - 1, 1).setValues(newVals);
+        log.push("Participantes Inactivos: valores de Etapa actualizados");
       }
     }
 
