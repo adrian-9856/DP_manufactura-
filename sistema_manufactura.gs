@@ -989,51 +989,112 @@ function actualizarEstadoPagosAutomatico() {
 
 // ========================= RESUMENES =========================
 function actualizarResumenParticipantes() {
-  const ss   = SpreadsheetApp.getActive();
-  const src  = ss.getSheetByName(SHEET_RECEPCIONES);
-  const dst  = ss.getSheetByName(SHEET_RESUMEN_PART);
-  const m    = _headerMap_(src);
-  const data = src.getDataRange().getValues();
+  const ss  = SpreadsheetApp.getActive();
+  const dst = ss.getSheetByName(SHEET_RESUMEN_PART);
+  if (!dst) return;
 
-  const acc = {};
-  for (let i = DATA_START_ROW - 1; i < data.length; i++) {
-    const r = data[i];
-    const p = r[m["participante"] - 1];
-    if (!p) continue;
-    if (!acc[p]) acc[p] = { b: 0, re: 0, q: 0, cid: "" };
-    acc[p].b  += Number(r[m["unidades buenas"]    - 1]) || 0;
-    acc[p].re += Number(r[m["unidades rechazadas"] - 1]) || 0;
-    acc[p].q  += Number(r[m["total q"]            - 1]) || 0;
-    if (!acc[p].cid) acc[p].cid = r[m["creamos id"] - 1] || "";
+  // Acumular desde Archivo_Recepciones (quincenas cerradas) + Recepciones (quincena actual)
+  const acc = {}; // { nombre: { cid, b, re, q, pagado, pendiente, quincenas: Set, primera, ultima } }
+
+  function _acumularHoja_(sh, startRow) {
+    if (!sh || sh.getLastRow() < startRow) return;
+    const m    = _headerMap_(sh);
+    const data = sh.getDataRange().getValues();
+    for (let i = startRow - 1; i < data.length; i++) {
+      const r = data[i];
+      const p = String(r[m["participante"] - 1] || "").trim();
+      if (!p) continue;
+      if (!acc[p]) acc[p] = { cid: "", b: 0, re: 0, q: 0, pagado: 0, pendiente: 0, quincenas: new Set(), primera: null, ultima: null };
+      const a = acc[p];
+      if (!a.cid) a.cid = String(r[m["creamos id"] - 1] || "").trim();
+      a.b  += Number(r[m["unidades buenas"]    - 1]) || 0;
+      a.re += Number(r[m["unidades rechazadas"] - 1]) || 0;
+      const tq = Number(r[m["total q"] - 1]) || 0;
+      a.q  += tq;
+      const estado = String(r[m["estado pago"] - 1] || "").trim().toLowerCase();
+      if (estado === "pagado")    a.pagado    += tq;
+      if (estado === "pendiente") a.pendiente += tq;
+      const q = String(r[m["quincena"] - 1] || "").trim();
+      if (q) a.quincenas.add(q);
+      const fe = r[m["fecha entrega"] - 1];
+      const fd = fe ? new Date(fe) : null;
+      if (fd && !isNaN(fd)) {
+        if (!a.primera || fd < a.primera) a.primera = fd;
+        if (!a.ultima  || fd > a.ultima)  a.ultima  = fd;
+      }
+    }
   }
 
-  dst.clear();
-  dst.getRange("A1").setValue("RESUMEN POR PARTICIPANTE").setFontWeight("bold").setFontSize(12)
-    .setBackground("#37474f").setFontColor("white");
+  _acumularHoja_(ss.getSheetByName(SHEET_ARCHIVO_REC), 2);           // histórico
+  _acumularHoja_(ss.getSheetByName(SHEET_RECEPCIONES), DATA_START_ROW); // quincena activa
 
-  dst.getRange("A2:G2").setValues([["Participante","Creamos ID","Unidades buenas","Unidades rechazadas","Tasa rechazo %","Total Q","Estado"]])
-    .setFontWeight("bold").setBackground("#455a64").setFontColor("white")
+  // Construir tabla
+  dst.clear();
+  dst.clearFormats();
+
+  const fmt = d => d ? Utilities.formatDate(d, Session.getScriptTimeZone(), "dd/MM/yyyy") : "";
+
+  const titulo = "RESUMEN HISTÓRICO POR PARTICIPANTE";
+  dst.getRange("A1:J1").merge()
+    .setValue(titulo).setFontWeight("bold").setFontSize(13)
+    .setBackground("#1a237e").setFontColor("white")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
-  dst.setRowHeight(2, 25);
+  dst.setRowHeight(1, 32);
+
+  const headers = [
+    "Participante", "Creamos ID",
+    "Unidades buenas", "Unidades rechazadas", "Tasa rechazo %",
+    "Total Q generado", "Total pagado", "Total pendiente",
+    "Quincenas activas", "Primera entrega", "Última entrega"
+  ];
+  dst.getRange(2, 1, 1, headers.length).setValues([headers])
+    .setFontWeight("bold").setBackground("#283593").setFontColor("white")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  dst.setRowHeight(2, 28);
   dst.setFrozenRows(2);
 
   const rows = Object.keys(acc).sort().map(k => {
-    const t = acc[k].b + acc[k].re;
-    return [k, acc[k].cid, acc[k].b, acc[k].re, t ? acc[k].re / t : 0, acc[k].q, acc[k].b > 0 ? "✓ Activo" : "⚠ Sin movimiento"];
+    const a = acc[k];
+    const tot = a.b + a.re;
+    return [
+      k, a.cid,
+      a.b, a.re,
+      tot ? a.re / tot : 0,
+      a.q, a.pagado, a.pendiente,
+      a.quincenas.size,
+      fmt(a.primera), fmt(a.ultima)
+    ];
   });
 
   if (rows.length) {
-    dst.getRange(3, 1, rows.length, 7).setValues(rows);
-    dst.getRange(3, 1, rows.length, 7)
+    const rng = dst.getRange(3, 1, rows.length, headers.length);
+    rng.setValues(rows)
       .setBackground("#ffffff").setFontColor("#212121")
-      .setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+      .setBorder(true, true, true, true, false, true, "#bdbdbd", SpreadsheetApp.BorderStyle.SOLID);
+
+    // Formatos numéricos
     dst.getRange(3, 5, rows.length, 1).setNumberFormat("0.00%");
-    dst.getRange(3, 6, rows.length, 1).setNumberFormat('"Q " #,##0.00');
+    dst.getRange(3, 6, rows.length, 3).setNumberFormat('"Q " #,##0.00');
+
+    // Filas alternadas
+    for (let i = 0; i < rows.length; i++) {
+      if (i % 2 === 1)
+        dst.getRange(3 + i, 1, 1, headers.length).setBackground("#e8eaf6");
+    }
+
+    // Resaltar pendientes > 0 en rojo suave
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i][7] > 0)
+        dst.getRange(3 + i, 8, 1, 1).setBackground("#ffcdd2").setFontColor("#b71c1c");
+    }
   }
 
-  dst.setColumnWidth(1, 150); dst.setColumnWidth(2, 100); dst.setColumnWidth(3, 120);
-  dst.setColumnWidth(4, 130); dst.setColumnWidth(5, 120); dst.setColumnWidth(6, 100);
-  dst.setColumnWidth(7, 130);
+  const widths = [160, 100, 110, 120, 100, 110, 110, 110, 110, 110, 110];
+  widths.forEach((w, i) => dst.setColumnWidth(i + 1, w));
+
+  dst.getRange("A1").offset(rows.length + 2, 0)
+    .setValue("Actualizado: " + fmt(new Date()))
+    .setFontColor("#9e9e9e").setFontStyle("italic").setFontSize(9);
 }
 
 function actualizarPagosPendientes() {
