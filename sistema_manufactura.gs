@@ -136,7 +136,7 @@ function limpiarHojasObsoletas() {
   try {
     const ss = SpreadsheetApp.getActive();
     const ui = SpreadsheetApp.getUi();
-    const obsoletas = [SHEET_PROGRAMAS, "Resumen Mensual", SHEET_PAGOS_PEND];
+    const obsoletas = [SHEET_PROGRAMAS, "Resumen Mensual", SHEET_PAGOS_PEND, SHEET_ARCHIVO_REC];
     const existentes = obsoletas.filter(n => !!ss.getSheetByName(n));
 
     if (existentes.length === 0) {
@@ -209,7 +209,7 @@ function _crearEstructura_(recrear) {
     SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS,
     SHEET_DASHBOARD, SHEET_REPORTES,
     SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS,
-    SHEET_HISTORIAL_PAGOS, SHEET_ARCHIVO_REC, SHEET_CATALOGO_PROD
+    SHEET_HISTORIAL_PAGOS, SHEET_CATALOGO_PROD
   ];
 
   if (recrear) {
@@ -239,7 +239,6 @@ function _crearEstructura_(recrear) {
   setup(SHEET_CHEQUES,         _setupCheques_);
   setup(SHEET_TRANSFERENCIAS,  _setupTransferencias_);
   setup(SHEET_HISTORIAL_PAGOS, _setupHistorialPagos_);
-  setup(SHEET_ARCHIVO_REC,     _setupArchivo_);
   setup(SHEET_CATALOGO_PROD,   _setupCatalogo_);
 
   crearValidacionesDatos();
@@ -1054,8 +1053,7 @@ function actualizarResumenParticipantes() {
     }
   }
 
-  _acumularHoja_(ss.getSheetByName(SHEET_ARCHIVO_REC), 2);           // histórico
-  _acumularHoja_(ss.getSheetByName(SHEET_RECEPCIONES), DATA_START_ROW); // quincena activa
+  _acumularHoja_(ss.getSheetByName(SHEET_RECEPCIONES), DATA_START_ROW);
 
   // Construir tabla
   dst.clear();
@@ -1676,8 +1674,8 @@ function crearQuincenaInicial() {
   }
 }
 
-// Calcula montos por participante en Recepciones y los escribe en Cheques o Transferencias
-function _generarPagosQuincena_(ss, ordenQ, fechaFin) {
+// Calcula montos por participante en Recepciones (filtrado por quincena) y los escribe en Cheques o Transferencias
+function _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ) {
   const rec = ss.getSheetByName(SHEET_RECEPCIONES);
   const cat = ss.getSheetByName(SHEET_CATALOGOS);
   const shT = ss.getSheetByName(SHEET_TRANSFERENCIAS);
@@ -1688,12 +1686,14 @@ function _generarPagosQuincena_(ss, ordenQ, fechaFin) {
   const dataRec = rec.getDataRange().getValues();
   const dataCat = cat.getDataRange().getValues();
 
-  // Total por participante (solo unidades buenas × precio)
+  // Total por participante — solo filas de esta quincena
   const totales = {};
   for (let i = DATA_START_ROW - 1; i < dataRec.length; i++) {
     const r = dataRec[i];
     const p = String(r[m["participante"] - 1] || "").trim();
+    const q = String(r[m["quincena"]     - 1] || "").trim();
     if (!p) continue;
+    if (q && q !== nombreQ) continue; // omitir filas de otras quincenas
     totales[p] = (totales[p] || 0) + (Number(r[m["total q"] - 1]) || 0);
   }
 
@@ -1820,9 +1820,6 @@ function cerrarQuincenaActual() {
     if (!shP) return ui.alert("Hoja PERIODOS no encontrada. Instala el sistema primero.");
     if (!rec)  return ui.alert("Hoja Recepciones no encontrada.");
 
-    const arc = _getOrCreate_(SHEET_ARCHIVO_REC);
-    if (arc.getLastRow() === 0) _setupArchivo_(arc);
-
     const dataPer = shP.getDataRange().getValues();
     let filaActiva = -1, nombreQ = "", fechaIni = null, fechaFin = null, ordenQ = "";
 
@@ -1832,7 +1829,7 @@ function cerrarQuincenaActual() {
         nombreQ    = String(dataPer[i][1] || "").trim();
         fechaIni   = new Date(dataPer[i][2]);
         fechaFin   = new Date(dataPer[i][3]);
-        ordenQ     = String(dataPer[i][5] || "").trim().toUpperCase(); // "Q1" o "Q2"
+        ordenQ     = String(dataPer[i][5] || "").trim().toUpperCase();
         break;
       }
     }
@@ -1841,61 +1838,52 @@ function cerrarQuincenaActual() {
       return ui.alert("No hay quincena activa.\n\nUsa '🗓️ Crear quincena inicial' primero.");
     }
 
-    // Regla: para cerrar Q2 tiene que existir una Q1 cerrada
     if (ordenQ === "Q2") {
       const hayQ1Cerrada = dataPer.slice(1).some(
         r => String(r[4] || "").trim() === "Cerrado" && String(r[5] || "").trim().toUpperCase() === "Q1"
       );
       if (!hayQ1Cerrada) {
-        return ui.alert("⚠️ No puedes cerrar la segunda quincena (Q2) sin haber cerrado primero la primera (Q1).");
+        return ui.alert("⚠️ No puedes cerrar Q2 sin haber cerrado primero Q1.");
       }
     }
 
-    const fmt = d => Utilities.formatDate(d, Session.getScriptTimeZone(), "dd/MM/yyyy");
-    const mRec    = _headerMap_(rec);
+    const fmt  = d => Utilities.formatDate(d, Session.getScriptTimeZone(), "dd/MM/yyyy");
+    const mRec = _headerMap_(rec);
     const dataRec = rec.getDataRange().getValues();
 
-    const filasDeEstaQ  = [];
+    // Identificar filas pendientes de esta quincena
     const filasPendient = [];
     for (let i = DATA_START_ROW - 1; i < dataRec.length; i++) {
       const r = dataRec[i];
       const p = String(r[mRec["participante"] - 1] || "").trim();
+      const q = String(r[mRec["quincena"]     - 1] || "").trim();
       if (!p) continue;
-      const q = String(r[mRec["quincena"] - 1] || "").trim();
-      if (q === nombreQ || q === "") {
-        filasDeEstaQ.push({ rowIndex: i, data: r });
-        if (String(r[mRec["estado pago"] - 1] || "").trim() === "Pendiente") {
-          filasPendient.push([...r]);
-        }
+      if (q && q !== nombreQ) continue;
+      if (String(r[mRec["estado pago"] - 1] || "").trim() === "Pendiente") {
+        filasPendient.push({ rowIndex: i, data: r });
       }
     }
 
     const esQ2 = (ordenQ === "Q2");
     let msgConfirm = "Quincena a cerrar:\n" + nombreQ + "\n(" + fmt(fechaIni) + " al " + fmt(fechaFin) + ")";
     if (filasPendient.length > 0)
-      msgConfirm += "\n\n⚠️ " + filasPendient.length + " pago(s) pendiente(s) → se arrastrarán a la siguiente quincena.";
+      msgConfirm += "\n\n⚠️ " + filasPendient.length + " pago(s) pendiente(s) → quedarán en Recepciones asignados a la siguiente quincena.";
     if (esQ2)
-      msgConfirm += "\n\n🗓️ Es la segunda quincena → el mes se cerrará y se guardará una copia en Drive automáticamente.";
+      msgConfirm += "\n\n🗓️ Es la segunda quincena → el mes se cerrará y se guardará copia en Drive.";
     msgConfirm += "\n\n¿Continuar?";
 
     if (ui.alert("Cerrar quincena", msgConfirm, ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
 
-    // 1. Generar pagos en Cheques / Transferencias ANTES de borrar Recepciones
-    _generarPagosQuincena_(ss, ordenQ, fechaFin);
+    // 1. Generar pagos en Cheques / Transferencias
+    _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ);
 
-    // 2. Archivar filas
-    for (const entry of filasDeEstaQ) arc.appendRow(entry.data);
-
-    // 3. Borrar de Recepciones (de abajo hacia arriba)
-    filasDeEstaQ.map(e => e.rowIndex + 1).sort((a, b) => b - a).forEach(rn => rec.deleteRow(rn));
-
-    // 4. Marcar quincena como Cerrada
+    // 2. Marcar quincena como Cerrada en PERIODOS
     shP.getRange(filaActiva, 5).setValue("Cerrado");
 
-    // 5. Si es Q2 → cerrar el mes (archiva pagos y guarda Drive)
+    // 3. Si es Q2 → archivar pagos a Historial y guardar Drive
     if (esQ2) _ejecutarCierreMes_(ss, false);
 
-    // 6. Pedir fechas para la siguiente quincena
+    // 4. Pedir fechas para la siguiente quincena
     const siguienteOrden = esQ2 ? "Q1" : "Q2";
     const propInicio     = new Date(fechaFin); propInicio.setDate(propInicio.getDate() + 1);
     const propFin        = new Date(propInicio); propFin.setDate(propFin.getDate() + 14);
@@ -1917,25 +1905,20 @@ function cerrarQuincenaActual() {
     shP.appendRow([shP.getLastRow(), nombreNueva, nuevaInicio, nuevaFin, "Activo", siguienteOrden]);
     shP.getRange(shP.getLastRow(), 3, 1, 2).setNumberFormat("yyyy-mm-dd");
 
-    // 7. Arrastrar pendientes a la nueva quincena
+    // 5. Reasignar pendientes a la nueva quincena (actualización en el lugar, sin borrar filas)
     if (filasPendient.length > 0) {
-      for (const r of filasPendient) {
-        const newRow = [...r];
-        newRow[mRec["quincena"] - 1] = nombreNueva;
-        const nota = String(newRow[mRec["notas / calidad"] - 1] || "").trim();
-        newRow[mRec["notas / calidad"] - 1] = nota ? nota + " (arrastrado)" : "(arrastrado)";
-        rec.appendRow(newRow);
-      }
-      for (let r = DATA_START_ROW; r <= rec.getLastRow(); r++) {
-        if (rec.getRange(r, mRec["participante"]).getValue())
-          rec.getRange(r, mRec["#"]).setValue(r - DATA_START_ROW + 1);
+      for (const entry of filasPendient) {
+        const shRow = entry.rowIndex + 1;
+        rec.getRange(shRow, mRec["quincena"]).setValue(nombreNueva);
+        const nota = String(entry.data[mRec["notas / calidad"] - 1] || "").trim();
+        rec.getRange(shRow, mRec["notas / calidad"]).setValue(nota ? nota + " (arrastrado)" : "(arrastrado)");
       }
     }
 
     actualizarHistorialQuincenas();
 
     const pMes  = esQ2 ? " 🗓️ Mes cerrado y guardado en Drive." : "";
-    const pPend = filasPendient.length > 0 ? ` ${filasPendient.length} pendiente(s) arrastrado(s).` : "";
+    const pPend = filasPendient.length > 0 ? ` ${filasPendient.length} pendiente(s) reasignado(s) a ${nombreNueva}.` : "";
     ss.toast(`✅ ${nombreQ} cerrada.${pPend}${pMes} Nueva: ${nombreNueva}`, null, 8);
   } catch (e) {
     SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
@@ -2063,20 +2046,10 @@ function _ejecutarCierreMes_(ss, mostrarToast) {
   // Archivar pagos a Historial_Pagos y limpiar Cheques/Transferencias
   _archivarPagosFinMes_(ss);
 
-  // Limpiar Recepciones (las filas ya fueron borradas al cerrar quincena, pero por si acaso)
-  const rec = ss.getSheetByName(SHEET_RECEPCIONES);
-  if (rec && rec.getLastRow() >= DATA_START_ROW) {
-    rec.deleteRows(DATA_START_ROW, rec.getLastRow() - DATA_START_ROW + 1);
-  }
-
-  // Limpiar Archivo_Recepciones (ya tiene todo guardado en Drive)
-  const arc = ss.getSheetByName(SHEET_ARCHIVO_REC);
-  if (arc && arc.getLastRow() > 1) {
-    arc.deleteRows(2, arc.getLastRow() - 1);
-  }
+  // Recepciones NO se limpia — acumula el historial completo de entregas
 
   if (mostrarToast) {
-    ss.toast("✅ Mes cerrado. Copia en Drive: '" + nombre + "'. Hojas limpiadas.", null, 8);
+    ss.toast("✅ Mes cerrado. Copia guardada en Drive: '" + nombre + "'.", null, 8);
   }
 }
 
