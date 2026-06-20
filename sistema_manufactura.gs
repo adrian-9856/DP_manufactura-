@@ -1508,6 +1508,36 @@ function _formatNombreQuincena_(inicio, fin) {
   return `Q_${inicio.getDate()}_${mes[inicio.getMonth()]}_${fin.getDate()}_${mes[fin.getMonth()]}_${fin.getFullYear()}`;
 }
 
+// Convierte texto DD/MM/AAAA o AAAA-MM-DD a Date. Retorna null si no es válido.
+function _parsearFecha_(texto) {
+  if (!texto) return null;
+  texto = texto.trim();
+  if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(texto)) {
+    const p = texto.split(/[\/\-]/);
+    const f = new Date(parseInt(p[2]), parseInt(p[1]) - 1, parseInt(p[0]));
+    return isNaN(f.getTime()) ? null : f;
+  }
+  if (/^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(texto)) {
+    const p = texto.split(/[\/\-]/);
+    const f = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
+    return isNaN(f.getTime()) ? null : f;
+  }
+  return null;
+}
+
+// Muestra un prompt con fecha propuesta. El usuario escribe otra o presiona OK para aceptar.
+function _pedirFecha_(ui, titulo, propuesta) {
+  const fmt = d => Utilities.formatDate(d, Session.getScriptTimeZone(), "dd/MM/yyyy");
+  const resp = ui.prompt(
+    titulo,
+    "Propuesta: " + fmt(propuesta) + "\n\nPresiona OK para aceptar, o escribe otra fecha (DD/MM/AAAA):",
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resp.getSelectedButton() !== ui.Button.OK) return null;
+  const texto = resp.getResponseText().trim();
+  return texto ? (_parsearFecha_(texto) || propuesta) : propuesta;
+}
+
 function crearQuincenaInicial() {
   try {
     const ss  = SpreadsheetApp.getActive();
@@ -1515,38 +1545,42 @@ function crearQuincenaInicial() {
     const ui  = SpreadsheetApp.getUi();
     if (!shP) return ui.alert("Instala el sistema primero.");
 
-    // Verificar si ya hay quincena activa
+    // Bloquear si ya existe quincena activa
     if (shP.getLastRow() > 1) {
       const data = shP.getDataRange().getValues();
       for (let i = 1; i < data.length; i++) {
         if (String(data[i][4] || "").trim() === "Activo") {
-          return ui.alert("Ya existe una quincena activa: " + data[i][1] + "\n\nUsa 'Cerrar quincena actual' para avanzar al siguiente período.");
+          return ui.alert(
+            "Ya existe una quincena activa",
+            "Quincena activa: " + data[i][1] + "\n\nUsa 'Cerrar quincena actual' para avanzar al siguiente período.",
+            ui.ButtonSet.OK
+          );
         }
       }
     }
 
-    const hoy   = new Date();
-    const dia   = hoy.getDate();
-    const mes   = hoy.getMonth();
-    const anio  = hoy.getFullYear();
+    // Pedir fecha de INICIO al usuario
+    const rInicio = ui.prompt(
+      "🗓️ Primera quincena — Fecha de INICIO",
+      "Escribe la fecha de inicio de la primera quincena.\nFormato: DD/MM/AAAA\n\nEjemplo: 11/06/2026",
+      ui.ButtonSet.OK_CANCEL
+    );
+    if (rInicio.getSelectedButton() !== ui.Button.OK) return;
+    const inicio = _parsearFecha_(rInicio.getResponseText().trim());
+    if (!inicio) return ui.alert("❌ Fecha no válida. Usa el formato DD/MM/AAAA (ejemplo: 11/06/2026).");
 
-    // Primera quincena = días 1-15 | Segunda quincena = 16 al último día del mes
-    let inicioD, finD;
-    if (dia <= 15) {
-      inicioD = new Date(anio, mes, 1);
-      finD    = new Date(anio, mes, 15);
-    } else {
-      inicioD = new Date(anio, mes, 16);
-      finD    = new Date(anio, mes + 1, 0); // último día del mes
-    }
+    // Proponer fin (+14 días) y dejar que el usuario lo confirme o cambie
+    const finPropuesto = new Date(inicio);
+    finPropuesto.setDate(finPropuesto.getDate() + 14);
+    const fin = _pedirFecha_(ui, "🗓️ Primera quincena — Fecha de FIN", finPropuesto);
+    if (!fin) return;
 
-    const nombre  = _formatNombreQuincena_(inicioD, finD);
-    const nextNum = Math.max(shP.getLastRow(), 1);
-    shP.appendRow([nextNum, nombre, inicioD, finD, "Activo", "Creada automáticamente"]);
+    const nombre  = _formatNombreQuincena_(inicio, fin);
+    shP.appendRow([shP.getLastRow(), nombre, inicio, fin, "Activo", "Q1"]);
     shP.getRange(shP.getLastRow(), 3, 1, 2).setNumberFormat("yyyy-mm-dd");
 
     actualizarHistorialQuincenas();
-    ss.toast("✅ Quincena creada: " + nombre, null, 5);
+    ss.toast("✅ Primera quincena creada: " + nombre, null, 5);
   } catch (e) {
     SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
   }
@@ -1557,33 +1591,47 @@ function cerrarQuincenaActual() {
     const ss  = SpreadsheetApp.getActive();
     const shP = ss.getSheetByName(SHEET_PERIODOS);
     const rec = ss.getSheetByName(SHEET_RECEPCIONES);
-    if (!shP) return SpreadsheetApp.getUi().alert("Hoja PERIODOS no encontrada. Instala el sistema primero.");
-    if (!rec)  return SpreadsheetApp.getUi().alert("Hoja Recepciones no encontrada.");
+    const ui  = SpreadsheetApp.getUi();
+    if (!shP) return ui.alert("Hoja PERIODOS no encontrada. Instala el sistema primero.");
+    if (!rec)  return ui.alert("Hoja Recepciones no encontrada.");
 
     const arc = _getOrCreate_(SHEET_ARCHIVO_REC);
     if (arc.getLastRow() === 0) _setupArchivo_(arc);
 
     const dataPer = shP.getDataRange().getValues();
-    let filaActiva = -1, nombreQ = "", fechaFinActiva = null;
+    let filaActiva = -1, nombreQ = "", fechaIni = null, fechaFin = null, ordenQ = "";
 
     for (let i = 1; i < dataPer.length; i++) {
       if (String(dataPer[i][4] || "").trim() === "Activo") {
-        filaActiva     = i + 1;
-        nombreQ        = String(dataPer[i][1] || "").trim();
-        fechaFinActiva = new Date(dataPer[i][3]);
+        filaActiva = i + 1;
+        nombreQ    = String(dataPer[i][1] || "").trim();
+        fechaIni   = new Date(dataPer[i][2]);
+        fechaFin   = new Date(dataPer[i][3]);
+        ordenQ     = String(dataPer[i][5] || "").trim().toUpperCase(); // "Q1" o "Q2"
         break;
       }
     }
 
-    if (filaActiva === -1) return SpreadsheetApp.getUi().alert("No hay ninguna quincena activa.");
+    if (filaActiva === -1) {
+      return ui.alert("No hay quincena activa.\n\nUsa '🗓️ Crear quincena inicial' primero.");
+    }
 
+    // Regla: para cerrar Q2 tiene que existir una Q1 cerrada
+    if (ordenQ === "Q2") {
+      const hayQ1Cerrada = dataPer.slice(1).some(
+        r => String(r[4] || "").trim() === "Cerrado" && String(r[5] || "").trim().toUpperCase() === "Q1"
+      );
+      if (!hayQ1Cerrada) {
+        return ui.alert("⚠️ No puedes cerrar la segunda quincena (Q2) sin haber cerrado primero la primera (Q1).");
+      }
+    }
+
+    const fmt = d => Utilities.formatDate(d, Session.getScriptTimeZone(), "dd/MM/yyyy");
     const mRec    = _headerMap_(rec);
     const dataRec = rec.getDataRange().getValues();
 
-    // Identificar filas de la quincena actual (y las sin quincena asignada)
     const filasDeEstaQ  = [];
     const filasPendient = [];
-
     for (let i = DATA_START_ROW - 1; i < dataRec.length; i++) {
       const r = dataRec[i];
       const p = String(r[mRec["participante"] - 1] || "").trim();
@@ -1597,79 +1645,74 @@ function cerrarQuincenaActual() {
       }
     }
 
-    const ui = SpreadsheetApp.getUi();
+    const esQ2 = (ordenQ === "Q2");
+    let msgConfirm = "Quincena a cerrar:\n" + nombreQ + "\n(" + fmt(fechaIni) + " al " + fmt(fechaFin) + ")";
+    if (filasPendient.length > 0)
+      msgConfirm += "\n\n⚠️ " + filasPendient.length + " pago(s) pendiente(s) → se arrastrarán a la siguiente quincena.";
+    if (esQ2)
+      msgConfirm += "\n\n🗓️ Es la segunda quincena → el mes se cerrará y se guardará una copia en Drive automáticamente.";
+    msgConfirm += "\n\n¿Continuar?";
 
-    if (filasPendient.length > 0) {
-      const aviso = ui.alert(
-        "⚠️ Hay " + filasPendient.length + " pago(s) pendiente(s)",
-        "Se arrastrarán a la nueva quincena con la nota '(arrastrado)'.\n¿Continuar con el cierre?",
-        ui.ButtonSet.YES_NO
-      );
-      if (aviso !== ui.Button.YES) return;
-    } else {
-      const ok = ui.alert(
-        "Cerrar quincena",
-        "¿Cerrar '" + nombreQ + "' y crear la siguiente (+15 días)?",
-        ui.ButtonSet.YES_NO
-      );
-      if (ok !== ui.Button.YES) return;
-    }
+    if (ui.alert("Cerrar quincena", msgConfirm, ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
 
-    // Archivar todas las filas de esta quincena
+    // 1. Archivar filas
     for (const entry of filasDeEstaQ) arc.appendRow(entry.data);
 
-    // Borrar de Recepciones de abajo hacia arriba
-    const numBorrar = filasDeEstaQ.map(e => e.rowIndex + 1).sort((a, b) => b - a);
-    for (const rn of numBorrar) rec.deleteRow(rn);
+    // 2. Borrar de Recepciones (de abajo hacia arriba)
+    filasDeEstaQ.map(e => e.rowIndex + 1).sort((a, b) => b - a).forEach(rn => rec.deleteRow(rn));
 
-    // Marcar quincena como Cerrada
+    // 3. Marcar quincena como Cerrada
     shP.getRange(filaActiva, 5).setValue("Cerrado");
 
-    // Calcular siguiente quincena
-    const nuevaInicio = new Date(fechaFinActiva);
-    nuevaInicio.setDate(nuevaInicio.getDate() + 1);
-    const nuevaFin = new Date(nuevaInicio);
-    nuevaFin.setDate(nuevaFin.getDate() + 14);
-    const nombreNueva = _formatNombreQuincena_(nuevaInicio, nuevaFin);
+    // 4. Si es Q2 → cerrar el mes automáticamente
+    if (esQ2) _ejecutarCierreMes_(ss, false);
 
-    // ── Detectar fin de mes ────────────────────────────────────────────────────
-    // Si la nueva quincena empieza en un mes diferente al que terminó → fin de mes
-    const esCambioMes = nuevaInicio.getMonth() !== fechaFinActiva.getMonth()
-                     || nuevaInicio.getFullYear() !== fechaFinActiva.getFullYear();
+    // 5. Pedir fechas para la siguiente quincena
+    const siguienteOrden = esQ2 ? "Q1" : "Q2";
+    const propInicio     = new Date(fechaFin); propInicio.setDate(propInicio.getDate() + 1);
+    const propFin        = new Date(propInicio); propFin.setDate(propFin.getDate() + 14);
 
-    if (esCambioMes) {
-      // Cierre de mes automático: guardar Drive + limpiar Archivo_Recepciones
-      _ejecutarCierreMes_(ss, false); // false = no pedir confirmación, ya se confirmó arriba
+    const nuevaInicio = _pedirFecha_(ui, "🗓️ " + siguienteOrden + " — Fecha de INICIO", propInicio);
+    if (!nuevaInicio) {
+      actualizarHistorialQuincenas();
+      return ss.toast("✅ " + nombreQ + " cerrada. Crea la siguiente quincena cuando quieras.", null, 6);
     }
 
-    // Abrir la nueva quincena
-    const nextNum = shP.getLastRow();
-    shP.appendRow([nextNum, nombreNueva, nuevaInicio, nuevaFin, "Activo", ""]);
+    const propNuevaFin = new Date(nuevaInicio); propNuevaFin.setDate(propNuevaFin.getDate() + 14);
+    const nuevaFin     = _pedirFecha_(ui, "🗓️ " + siguienteOrden + " — Fecha de FIN", propNuevaFin);
+    if (!nuevaFin) {
+      actualizarHistorialQuincenas();
+      return ss.toast("✅ " + nombreQ + " cerrada. Crea la siguiente quincena cuando quieras.", null, 6);
+    }
+
+    const nombreNueva = _formatNombreQuincena_(nuevaInicio, nuevaFin);
+    shP.appendRow([shP.getLastRow(), nombreNueva, nuevaInicio, nuevaFin, "Activo", siguienteOrden]);
     shP.getRange(shP.getLastRow(), 3, 1, 2).setNumberFormat("yyyy-mm-dd");
 
-    // Arrastrar pendientes a la nueva quincena
+    // 6. Arrastrar pendientes a la nueva quincena
     if (filasPendient.length > 0) {
       for (const r of filasPendient) {
         const newRow = [...r];
         newRow[mRec["quincena"] - 1] = nombreNueva;
-        const notaActual = String(newRow[mRec["notas / calidad"] - 1] || "").trim();
-        newRow[mRec["notas / calidad"] - 1] = notaActual ? notaActual + " (arrastrado)" : "(arrastrado)";
+        const nota = String(newRow[mRec["notas / calidad"] - 1] || "").trim();
+        newRow[mRec["notas / calidad"] - 1] = nota ? nota + " (arrastrado)" : "(arrastrado)";
         rec.appendRow(newRow);
       }
       for (let r = DATA_START_ROW; r <= rec.getLastRow(); r++) {
-        if (rec.getRange(r, mRec["participante"]).getValue()) {
+        if (rec.getRange(r, mRec["participante"]).getValue())
           rec.getRange(r, mRec["#"]).setValue(r - DATA_START_ROW + 1);
-        }
       }
     }
 
     actualizarHistorialQuincenas();
 
-    const partesMes = esCambioMes ? " 🗓️ Mes cerrado y guardado en Drive." : "";
-    const partesPend = filasPendient.length > 0 ? ` ${filasPendient.length} pendiente(s) arrastrado(s).` : "";
-    ss.toast(`✅ Quincena cerrada.${partesPend}${partesMes} Nueva: ${nombreNueva}`, null, 8);
+    const pMes  = esQ2 ? " 🗓️ Mes cerrado y guardado en Drive." : "";
+    const pPend = filasPendient.length > 0 ? ` ${filasPendient.length} pendiente(s) arrastrado(s).` : "";
+    ss.toast(`✅ ${nombreQ} cerrada.${pPend}${pMes} Nueva: ${nombreNueva}`, null, 8);
   } catch (e) {
     SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
+  }
+}
   }
 }
 
