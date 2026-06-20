@@ -35,18 +35,21 @@ const RECEPCIONES_HEADERS = [
 
 // Columnas del catálogo de participantes (0-indexed)
 const CAT_COL = {
-  ID:          0,  // A – Creamos ID
-  NOMBRE:      1,  // B – Nombre Completo
-  ESTADO:      2,  // C – Estado
-  NUM_CUENTA:  3,  // D – Nº Cuenta
-  TIPO_CUENTA: 4,  // E – Tipo Cuenta
-  BANCO:       5,  // F – Banco
-  TITULAR:     6,  // G – Titular
-  DPI:         7,  // H – DPI
-  PROGRAMAS:   8,  // I – Programas (texto)
-  HIJOS:       9,  // J – N° Hijos
-  CCI:        10,  // K – CCI (checkbox)
-  CUNDE:      11,  // L – CUNDE (checkbox)
+  ID:             0,  // A – Creamos ID
+  NOMBRE:         1,  // B – Nombre Completo
+  ESTADO:         2,  // C – Estado
+  NUM_CUENTA:     3,  // D – Nº Cuenta
+  TIPO_CUENTA:    4,  // E – Tipo Cuenta
+  BANCO:          5,  // F – Banco
+  TITULAR:        6,  // G – Titular
+  DPI:            7,  // H – DPI
+  MI_EELO:        8,  // I – mi_eelo (checkbox)
+  EDUCACION:      9,  // J – Educación (checkbox)
+  INCLUSION_LAB: 10,  // K – Inclusión Laboral (checkbox)
+  APOYO_EMOC:    11,  // L – Apoyo Emocional (checkbox)
+  HIJOS:         12,  // M – N° Hijos
+  CCI:           13,  // N – CCI (checkbox)
+  CUNDE:         14,  // O – CUNDE (checkbox)
 };
 
 // ========================= MENU =========================
@@ -212,57 +215,54 @@ function _setupCatalogos_(sh) {
   sh.clear();
   sh.clearFormats();
 
-  // A–H: datos bancarios/personales | I: programas | J–L: datos sociales
+  // A–H: datos personales/bancarios
   sh.getRange("A1:H1").setValues([["Creamos ID", "Nombre Completo", "Estado", "Nº Cuenta", "Tipo Cuenta", "Banco", "Titular", "DPI"]])
     .setBackground("#263238").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
-  sh.getRange("I1").setValue("Programas")
-    .setBackground("#263238").setFontColor("#ffffff").setFontWeight("bold")
+  // I–L: programas sociales (antes hoja separada Programas_Participacion)
+  sh.getRange("I1:L1").setValues([["mi_eelo", "Educación", "Inclusión Laboral", "Apoyo Emocional"]])
+    .setBackground("#2e7d32").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
-  sh.getRange("J1:L1").setValues([["N° Hijos", "CCI", "CUNDE"]])
+  // M–O: datos sociales
+  sh.getRange("M1:O1").setValues([["N° Hijos", "CCI", "CUNDE"]])
     .setBackground("#4a148c").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
   sh.setFrozenRows(1);
-  sh.setRowHeight(1, 25);
+  sh.setRowHeight(1, 28);
 
-  sh.setColumnWidth(1,  100); // A – Creamos ID
-  sh.setColumnWidth(2,  180); // B – Nombre
-  sh.setColumnWidth(3,  100); // C – Estado
-  sh.setColumnWidth(4,  130); // D – Nº Cuenta
-  sh.setColumnWidth(5,  130); // E – Tipo Cuenta
-  sh.setColumnWidth(6,  120); // F – Banco
-  sh.setColumnWidth(7,  150); // G – Titular
-  sh.setColumnWidth(8,  110); // H – DPI
-  sh.setColumnWidth(9,  180); // I – Programas
-  sh.setColumnWidth(10,  80); // J – N° Hijos
-  sh.setColumnWidth(11,  60); // K – CCI
-  sh.setColumnWidth(12,  70); // L – CUNDE
+  sh.setColumnWidth(1,  100); sh.setColumnWidth(2,  180); sh.setColumnWidth(3,  100);
+  sh.setColumnWidth(4,  130); sh.setColumnWidth(5,  130); sh.setColumnWidth(6,  120);
+  sh.setColumnWidth(7,  150); sh.setColumnWidth(8,  110);
+  sh.setColumnWidth(9,   90); sh.setColumnWidth(10,  90); sh.setColumnWidth(11, 140);
+  sh.setColumnWidth(12, 140); sh.setColumnWidth(13,  80); sh.setColumnWidth(14,  60);
+  sh.setColumnWidth(15,  70);
 
-  sh.getRange("A2:I1000").setBackground("#ffffff").setFontColor("#212121");
-  sh.getRange("A2:I1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("A2:H1000").setBackground("#ffffff").setFontColor("#212121");
+  sh.getRange("A2:H1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
-  sh.getRange("J2:J1000").setBackground("#fce4ec").setFontColor("#212121");
-  sh.getRange("J2:J1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("I2:L1000").insertCheckboxes();
+  sh.getRange("I2:L1000").setBackground("#f1f8e9");
+  sh.getRange("I2:L1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
-  sh.getRange("K2:L1000").insertCheckboxes();
-  sh.getRange("K2:L1000").setBackground("#fce4ec");
-  sh.getRange("K2:L1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("M2:M1000").setBackground("#fce4ec").setFontColor("#212121");
+  sh.getRange("M2:M1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+
+  sh.getRange("N2:O1000").insertCheckboxes();
+  sh.getRange("N2:O1000").setBackground("#fce4ec");
+  sh.getRange("N2:O1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
   sh.getRange("C2:C1000").setDataValidation(
     SpreadsheetApp.newDataValidation()
       .requireValueInList(["Activo", "Inactivo"])
-      .setAllowInvalid(false)
-      .build()
+      .setAllowInvalid(false).build()
   );
-
   sh.getRange("E2:E1000").setDataValidation(
     SpreadsheetApp.newDataValidation()
       .requireValueInList(["Monetaria", "Ahorro", "Corriente"])
-      .setAllowInvalid(true)
-      .build()
+      .setAllowInvalid(true).build()
   );
 }
 
@@ -516,19 +516,19 @@ function _setupCatalogo_(sh) {
   sh.clear();
   sh.clearFormats();
 
-  sh.getRange("A1:E1").setValues([["Categoría", "Diseño / Producto", "Precio (Q)", "Activo", "Notas"]])
+  // Col A = Categoría, B = Diseño/Producto, C = Precio, D = Notas
+  sh.getRange("A1:D1").setValues([["Categoría", "Diseño / Producto", "Precio (Q)", "Notas"]])
     .setBackground("#1565c0").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
   sh.setFrozenRows(1);
   sh.setRowHeight(1, 25);
 
-  sh.setColumnWidth(1, 130); sh.setColumnWidth(2, 220); sh.setColumnWidth(3, 110);
-  sh.setColumnWidth(4, 80);  sh.setColumnWidth(5, 240);
+  sh.setColumnWidth(1, 130); sh.setColumnWidth(2, 220);
+  sh.setColumnWidth(3, 110); sh.setColumnWidth(4, 260);
 
   sh.getRange("C2:C1000").setNumberFormat('"Q " #,##0.00');
-  sh.getRange("D2:D1000").insertCheckboxes();
-  sh.getRange("A2:E1000").setBackground("#ffffff").setFontColor("#212121");
-  sh.getRange("A2:E1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("A2:D1000").setBackground("#ffffff").setFontColor("#212121");
+  sh.getRange("A2:D1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 }
 
 // ── Archivo de Recepciones (quincenas cerradas) ───────────────────────────────
@@ -565,11 +565,10 @@ function agregarEntregaRapida() {
     const productosConPrecio = [];
     const catProd = ss.getSheetByName(SHEET_CATALOGO_PROD);
     if (catProd && catProd.getLastRow() > 1) {
-      catProd.getRange(2, 1, catProd.getLastRow() - 1, 4).getValues().forEach(r => {
+      catProd.getRange(2, 1, catProd.getLastRow() - 1, 3).getValues().forEach(r => {
         const prod   = String(r[1] || "").trim();
         const precio = Number(r[2]) || 0;
-        const activo = r[3];
-        if (prod && activo !== false) productosConPrecio.push({ nombre: prod, precio });
+        if (prod) productosConPrecio.push({ nombre: prod, precio });
       });
     }
 
@@ -1793,37 +1792,20 @@ function _registrarPagoEnHojas_(participante, datos, fechaPago, tipo) {
 
 function actualizarParticipacionProgramas() {
   try {
-    const ss   = SpreadsheetApp.getActive();
-    const cat  = ss.getSheetByName(SHEET_CATALOGOS);
-    const prog = ss.getSheetByName(SHEET_PROGRAMAS);
-    if (!cat || !prog) return SpreadsheetApp.getUi().alert("Instala el sistema primero.");
+    const ss  = SpreadsheetApp.getActive();
+    const cat = ss.getSheetByName(SHEET_CATALOGOS);
+    if (!cat) return SpreadsheetApp.getUi().alert("Instala el sistema primero.");
 
-    const dataCat  = cat.getDataRange().getValues();
+    // Los programas (I–L) ya están en Participantes Activos.
+    // Esta función solo asegura que las filas nuevas tengan checkboxes en I:O.
+    const lastRow = cat.getLastRow();
+    if (lastRow < 2) return ss.toast("No hay participantes.", null, 3);
 
-    // Mapear participantes ya existentes en la hoja de programas (por Creamos_ID)
-    const existingMap = {};
-    if (prog.getLastRow() > 1) {
-      prog.getRange(2, 1, prog.getLastRow() - 1, 2).getValues().forEach((r, idx) => {
-        const cid = String(r[0] || "").trim();
-        if (cid) existingMap[cid] = idx + 2; // fila 1-indexed en la hoja
-      });
-    }
+    // Insertar checkboxes en columnas I–L y N–O para filas que los necesiten
+    cat.getRange(2, 9,  lastRow - 1, 4).insertCheckboxes(); // I–L: programas
+    cat.getRange(2, 14, lastRow - 1, 2).insertCheckboxes(); // N–O: CCI, CUNDE
 
-    let agregados = 0;
-    for (let i = 1; i < dataCat.length; i++) {
-      const cid    = String(dataCat[i][CAT_COL.ID]     || "").trim();
-      const nombre = String(dataCat[i][CAT_COL.NOMBRE] || "").trim();
-      if (!cid && !nombre) continue;
-
-      if (!existingMap[cid]) {
-        // A=CID | B=Nombre | C=mi_eelo | D=Educación | E=Inclusión_Laboral | F=Apoyo_Emocional | G=Notas
-        prog.appendRow([cid, nombre, false, false, false, false, ""]);
-        agregados++;
-      }
-      // No se toca nada en participantes existentes (sus checkboxes ya fueron marcados manualmente)
-    }
-
-    ss.toast(`✅ Participación sincronizada.${agregados > 0 ? " " + agregados + " nuevos." : " Todo al día."}`, null, 3);
+    ss.toast("✅ Participación al día — programas en columnas I–L de Participantes Activos.", null, 4);
   } catch (e) {
     SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
   }
