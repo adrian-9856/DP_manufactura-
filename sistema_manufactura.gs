@@ -65,10 +65,12 @@ function onOpen() {
       .addItem("✏️ Editar fila seleccionada",  "editarFilaSeleccionada")
       .addItem("✅ Marcar fila como pagada",   "marcarFilaPagada")
       .addSeparator()
+      .addItem("🗓️ Crear quincena inicial",        "crearQuincenaInicial")
       .addItem("📅 Cerrar quincena actual",         "cerrarQuincenaActual")
-      .addItem("📋 Actualizar participación",      "actualizarParticipacionProgramas")
+      .addItem("🗃️ Cerrar mes manualmente",         "cerrarMes")
       .addSeparator()
-      .addItem("🔄 Actualizar todo", "actualizarTodo")
+      .addItem("📋 Actualizar participación",      "actualizarParticipacionProgramas")
+      .addItem("🔄 Actualizar todo",               "actualizarTodo")
       .addSeparator()
       .addItem("⏱️ Crear triggers",    "crearTriggers")
       .addItem("⏹️ Eliminar triggers", "eliminarTriggers")
@@ -179,6 +181,7 @@ function _crearEstructura_(recrear) {
   _setupCatalogo_(cat2);
 
   crearValidacionesDatos();
+  crearQuincenaInicial();  // crea la quincena del período actual si no existe
   actualizarTodo();
 }
 
@@ -1470,6 +1473,50 @@ function _obtenerQuincenaActiva_() {
 function _formatNombreQuincena_(inicio, fin) {
   const mes = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
   return `Q_${inicio.getDate()}_${mes[inicio.getMonth()]}_${fin.getDate()}_${mes[fin.getMonth()]}_${fin.getFullYear()}`;
+}
+
+function crearQuincenaInicial() {
+  try {
+    const ss  = SpreadsheetApp.getActive();
+    const shP = ss.getSheetByName(SHEET_PERIODOS);
+    const ui  = SpreadsheetApp.getUi();
+    if (!shP) return ui.alert("Instala el sistema primero.");
+
+    // Verificar si ya hay quincena activa
+    if (shP.getLastRow() > 1) {
+      const data = shP.getDataRange().getValues();
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][4] || "").trim() === "Activo") {
+          return ui.alert("Ya existe una quincena activa: " + data[i][1] + "\n\nUsa 'Cerrar quincena actual' para avanzar al siguiente período.");
+        }
+      }
+    }
+
+    const hoy   = new Date();
+    const dia   = hoy.getDate();
+    const mes   = hoy.getMonth();
+    const anio  = hoy.getFullYear();
+
+    // Primera quincena = días 1-15 | Segunda quincena = 16 al último día del mes
+    let inicioD, finD;
+    if (dia <= 15) {
+      inicioD = new Date(anio, mes, 1);
+      finD    = new Date(anio, mes, 15);
+    } else {
+      inicioD = new Date(anio, mes, 16);
+      finD    = new Date(anio, mes + 1, 0); // último día del mes
+    }
+
+    const nombre  = _formatNombreQuincena_(inicioD, finD);
+    const nextNum = Math.max(shP.getLastRow(), 1);
+    shP.appendRow([nextNum, nombre, inicioD, finD, "Activo", "Creada automáticamente"]);
+    shP.getRange(shP.getLastRow(), 3, 1, 2).setNumberFormat("yyyy-mm-dd");
+
+    actualizarHistorialQuincenas();
+    ss.toast("✅ Quincena creada: " + nombre, null, 5);
+  } catch (e) {
+    SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
+  }
 }
 
 function cerrarQuincenaActual() {
