@@ -168,21 +168,22 @@ function actualizarHojasNuevas() {
     const ui = SpreadsheetApp.getUi();
 
     const hojas = [
-      { nombre: SHEET_CHEQUES,        fn: _setupCheques_ },
-      { nombre: SHEET_TRANSFERENCIAS, fn: _setupTransferencias_ }
+      { nombre: SHEET_CHEQUES,        fn: _setupCheques_,        minRow: 3 },
+      { nombre: SHEET_TRANSFERENCIAS, fn: _setupTransferencias_, minRow: 3 },
+      { nombre: SHEET_HISTORIAL_PAGOS,fn: _setupHistorialPagos_, minRow: 3 }
     ];
 
     const conDatos = hojas.filter(h => {
       const sh = ss.getSheetByName(h.nombre);
-      return sh && sh.getLastRow() > 2;
+      return sh && sh.getLastRow() >= h.minRow;
     });
 
     if (conDatos.length > 0) {
       const aviso = ui.alert(
         "⚠️ Hojas con datos",
-        "Estas hojas tienen datos que se borrarán al actualizar:\n\n• " +
+        "Estas hojas tienen datos que se borrarán al actualizar la estructura:\n\n• " +
         conDatos.map(h => h.nombre).join("\n• ") +
-        "\n\nLos datos ya guardados en Historial_Pagos no se afectan.\n\n¿Continuar?",
+        "\n\n¿Continuar?",
         ui.ButtonSet.YES_NO
       );
       if (aviso !== ui.Button.YES) return;
@@ -193,7 +194,7 @@ function actualizarHojasNuevas() {
       h.fn(sh);
     });
 
-    ss.toast("✅ Cheques y Transferencias actualizadas con la nueva estructura.", null, 5);
+    ss.toast("✅ Cheques, Transferencias e Historial_Pagos actualizados.", null, 5);
   } catch (e) {
     SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
   }
@@ -536,29 +537,32 @@ function _setupProgramas_(sh) {
   sh.getRange("A2:G1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 }
 
-// ── Mejora 4: HISTORIAL_PAGOS ─────────────────────────────────────────────────
 function _setupHistorialPagos_(sh) {
   sh.clear();
   sh.clearFormats();
 
-  sh.getRange("A1:J1").setValues([[
-    "Fecha_Pago", "Quincena", "Participante", "Creamos_ID",
-    "Producto", "Unidades", "Total_Q", "Método_Pago", "Referencia", "Notas"
-  ]])
-    .setBackground("#37474f").setFontColor("#ffffff").setFontWeight("bold")
+  const COLS = 12;
+  sh.getRange(1, 1, 1, COLS).merge()
+    .setValue("HISTORIAL DE PAGOS").setFontWeight("bold").setFontSize(13)
+    .setBackground("#1b5e20").setFontColor("white")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
-  sh.setFrozenRows(1);
-  sh.setRowHeight(1, 25);
+  sh.setRowHeight(1, 32);
 
-  sh.setColumnWidth(1, 110); sh.setColumnWidth(2, 200); sh.setColumnWidth(3, 170);
-  sh.setColumnWidth(4, 110); sh.setColumnWidth(5, 140); sh.setColumnWidth(6, 90);
-  sh.setColumnWidth(7, 110); sh.setColumnWidth(8, 130); sh.setColumnWidth(9, 140);
-  sh.setColumnWidth(10, 200);
+  sh.getRange(2, 1, 1, COLS).setValues([[
+    "Nombre", "Creamos ID", "Banco", "Tipo Cuenta", "Nº Cuenta", "Titular",
+    "Quincena_1", "Quincena_2", "Total_Mes", "Mes", "Año", "Método"
+  ]])
+    .setFontWeight("bold").setBackground("#2e7d32").setFontColor("white")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.setRowHeight(2, 28);
+  sh.setFrozenRows(2);
 
-  sh.getRange("A2:A1000").setNumberFormat("yyyy-mm-dd");
-  sh.getRange("G2:G1000").setNumberFormat('"Q " #,##0.00');
-  sh.getRange("A2:J1000").setBackground("#fafafa").setFontColor("#212121");
-  sh.getRange("A2:J1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("G3:I1000").setNumberFormat('"Q " #,##0.00');
+  sh.getRange("A3:L1000").setBackground("#f1f8e9").setFontColor("#212121");
+  sh.getRange("A3:L1000").setBorder(true, true, true, true, false, true, "#c8e6c9", SpreadsheetApp.BorderStyle.SOLID);
+
+  const widths = [160, 100, 130, 110, 130, 150, 100, 100, 100, 110, 60, 110];
+  widths.forEach((w, i) => sh.setColumnWidth(i + 1, w));
 }
 
 
