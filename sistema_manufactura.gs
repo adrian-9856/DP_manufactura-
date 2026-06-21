@@ -30,7 +30,7 @@ const DATA_START_ROW = 5;
 const RECEPCIONES_HEADERS = [
   "#", "Fecha entrega", "Quincena", "Participante", "Creamos ID", "Proyecto / Cliente", "Producto",
   "Unidades buenas", "Unidades rechazadas", "Precio unit. (Q)", "Total Q",
-  "Impuesto PC (5%)", "Total Neto",
+  "Impuesto PC (5%)", "Total a Pagar",
   "Estado pago", "Fecha pago", "Método pago", "Comprobante", "Notas / calidad"
 ];
 
@@ -158,7 +158,34 @@ function migrarDatosExistentes() {
       }
     });
 
-    // 4. Eliminar Archivo_Recepciones si existe
+    // 4. Recepciones: actualizar encabezados si faltan las columnas nuevas
+    const shRecMig = ss.getSheetByName(SHEET_RECEPCIONES);
+    if (shRecMig) {
+      const hdrsRec   = shRecMig.getRange(HEADER_ROW, 1, 1, shRecMig.getLastColumn()).getValues()[0];
+      const tieneImp  = hdrsRec.some(h => String(h).toLowerCase().includes("impuesto"));
+      if (!tieneImp) {
+        const nCols   = RECEPCIONES_HEADERS.length;
+        const lastCol = _colLetter_(nCols);
+        // Reescribir fila de encabezados
+        shRecMig.getRange(HEADER_ROW, 1, 1, nCols)
+          .setValues([RECEPCIONES_HEADERS])
+          .setBackground("#37474f").setFontColor("#ffffff").setFontWeight("bold")
+          .setHorizontalAlignment("center").setWrap(true).setVerticalAlignment("middle");
+        // Actualizar rango del título en fila 1
+        shRecMig.getRange(1, 1, 1, nCols).merge();
+        // Anchos para columnas nuevas
+        shRecMig.setColumnWidth(12, 90); // Impuesto PC
+        shRecMig.setColumnWidth(13, 90); // Total a Pagar
+        // Limpiar formato en datos para que quede limpio
+        if (shRecMig.getLastRow() >= DATA_START_ROW) {
+          shRecMig.getRange(`A${DATA_START_ROW}:${lastCol}1000`)
+            .setBackground("#ffffff").setFontColor("#212121");
+        }
+        log.push("Recepciones: encabezados actualizados (Impuesto PC + Total a Pagar)");
+      }
+    }
+
+    // 5. Eliminar Archivo_Recepciones si existe
     const shArc = ss.getSheetByName(SHEET_ARCHIVO_REC);
     if (shArc) {
       ss.deleteSheet(shArc);
@@ -258,21 +285,32 @@ function limpiarDatosPrueba() {
     hojasFila1.forEach(nombre => {
       const sh = ss.getSheetByName(nombre);
       if (!sh || sh.getLastRow() < 2) return;
-      sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).clearContent();
+      const rng = sh.getRange(2, 1, Math.max(sh.getLastRow() - 1, 1), sh.getLastColumn());
+      rng.clearContent();
+      rng.setBackground(null).setFontColor(null).setFontWeight("normal");
       log.push(nombre);
     });
 
     // PERIODOS: encabezado en fila 1, datos desde fila 2
     const shPer = ss.getSheetByName(SHEET_PERIODOS);
     if (shPer && shPer.getLastRow() > 1) {
-      shPer.getRange(2, 1, shPer.getLastRow() - 1, shPer.getLastColumn()).clearContent();
+      const rng = shPer.getRange(2, 1, shPer.getLastRow() - 1, shPer.getLastColumn());
+      rng.clearContent();
+      rng.setBackground(null).setFontColor(null).setFontWeight("normal");
       log.push(SHEET_PERIODOS);
     }
 
     // Recepciones: encabezado en fila 4, datos desde fila 5
     const shRec = ss.getSheetByName(SHEET_RECEPCIONES);
-    if (shRec && shRec.getLastRow() >= DATA_START_ROW) {
-      shRec.getRange(DATA_START_ROW, 1, shRec.getLastRow() - DATA_START_ROW + 1, shRec.getLastColumn()).clearContent();
+    if (shRec) {
+      const totalRows = shRec.getMaxRows();
+      if (totalRows >= DATA_START_ROW) {
+        const nCols  = RECEPCIONES_HEADERS.length;
+        const rngDat = shRec.getRange(DATA_START_ROW, 1, totalRows - DATA_START_ROW + 1, nCols);
+        rngDat.clearContent();
+        rngDat.setBackground("#ffffff").setFontColor("#212121").setFontWeight("normal");
+        rngDat.setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+      }
       log.push(SHEET_RECEPCIONES);
     }
 
@@ -407,12 +445,15 @@ function _setupRecepciones_(sh) {
   sh.clear();
   sh.clearFormats();
 
-  sh.getRange("A1:P1").merge().setValue("📦 REGISTRO DE RECEPCIONES")
+  const nCols    = RECEPCIONES_HEADERS.length;
+  const lastCol  = _colLetter_(nCols);
+
+  sh.getRange(1, 1, 1, nCols).merge().setValue("📦 REGISTRO DE RECEPCIONES")
     .setFontWeight("bold").setFontSize(14).setBackground("#263238").setFontColor("white")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
   sh.setRowHeight(1, 28);
 
-  sh.getRange(HEADER_ROW, 1, 1, RECEPCIONES_HEADERS.length)
+  sh.getRange(HEADER_ROW, 1, 1, nCols)
     .setValues([RECEPCIONES_HEADERS])
     .setBackground("#37474f").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setWrap(true).setVerticalAlignment("middle");
@@ -420,13 +461,18 @@ function _setupRecepciones_(sh) {
   sh.setFrozenRows(HEADER_ROW);
   sh.setRowHeight(HEADER_ROW, 30);
 
-  // 16 columnas: # | Fecha | Quincena | Participante | CreamosID | Proyecto | Producto |
-  //              UBuenas | URechaz | PrecioU | TotalQ | Estado | FechaPago | Metodo | Comprobante | Notas
-  const widths = [45, 90, 110, 150, 100, 160, 120, 100, 120, 90, 80, 80, 80, 100, 120, 150];
+  // #|Fecha|Quincena|Participante|CreamosID|Proyecto|Producto|UBuenas|URechaz|PrecioU|TotalQ|ImpPC|TotalPagar|Estado|FechaPago|Metodo|Comprobante|Notas
+  const widths = [45, 90, 110, 150, 100, 160, 120, 100, 120, 90, 80, 90, 90, 80, 80, 100, 120, 150];
   widths.forEach((w, i) => sh.setColumnWidth(i + 1, w));
 
-  sh.getRange(`A${HEADER_ROW + 1}:P1000`).setBackground("#ffffff").setFontColor("#212121");
-  sh.getRange(`A${HEADER_ROW + 1}:P1000`).setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange(`A${HEADER_ROW + 1}:${lastCol}1000`).setBackground("#ffffff").setFontColor("#212121");
+  sh.getRange(`A${HEADER_ROW + 1}:${lastCol}1000`).setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+}
+
+function _colLetter_(col) {
+  let r = '';
+  while (col > 0) { const m = (col - 1) % 26; r = String.fromCharCode(65 + m) + r; col = Math.floor((col - 1) / 26); }
+  return r;
 }
 
 function _setupCatalogos_(sh) {
@@ -934,8 +980,8 @@ function agregarEntregaRapida() {
           <div class="resumen-row"><span>Unidades buenas:</span><span id="res-buenas">0</span></div>
           <div class="resumen-row"><span>Precio unitario:</span><span>Q <span id="res-precio">0.00</span></span></div>
           <div class="resumen-row"><span>Total bruto:</span><span>Q <span id="res-bruto">0.00</span></span></div>
-          <div class="resumen-row" style="color:#e53935;"><span>Imp. Pequeño Contribuyente (5%):</span><span>− Q <span id="res-impuesto">0.00</span></span></div>
-          <div class="resumen-row total"><span>Total neto a pagar:</span><span>Q <span id="res-total">0.00</span></span></div>
+          <div class="resumen-row" style="color:#1565c0;"><span>+ Imp. Pequeño Contribuyente (5%):</span><span>+ Q <span id="res-impuesto">0.00</span></span></div>
+          <div class="resumen-row total"><span>Total a pagar:</span><span>Q <span id="res-total">0.00</span></span></div>
         </div>
 
         <div id="toast" style="display:none; background:#e8f5e9; border-left:3px solid #43a047;
@@ -973,12 +1019,12 @@ function agregarEntregaRapida() {
           const p       = Number(document.getElementById('precio').value) || 0;
           const bruto   = b * p;
           const imp     = bruto * 0.05;
-          const neto    = bruto * 0.95;
+          const total   = bruto + imp;          // programa paga bruto + impuesto
           document.getElementById('res-buenas').textContent   = b;
           document.getElementById('res-precio').textContent   = p.toFixed(2);
           document.getElementById('res-bruto').textContent    = bruto.toFixed(2);
           document.getElementById('res-impuesto').textContent = imp.toFixed(2);
-          document.getElementById('res-total').textContent    = neto.toFixed(2);
+          document.getElementById('res-total').textContent    = total.toFixed(2);
           document.getElementById('resumen').style.display    = (b > 0 || p > 0) ? 'block' : 'none';
         }
 
@@ -1022,14 +1068,14 @@ function agregarEntregaRapida() {
           const btn   = document.getElementById('btn-guardar');
           const b     = Number(document.getElementById('buenas').value) || 0;
           const p     = Number(document.getElementById('precio').value) || 0;
-          const neto  = b * p * 0.95;
+          const total = b * p * 1.05;           // bruto + impuesto 5%
           btn.disabled = true; btn.style.opacity = '0.6';
           document.getElementById('loading').style.display = 'block';
           google.script.run
             .withSuccessHandler(function() {
               btn.disabled = false; btn.style.opacity = '1';
               document.getElementById('loading').style.display = 'none';
-              limpiarParaSiguiente(b, p, neto);
+              limpiarParaSiguiente(b, p, total);
             })
             .withFailureHandler(function(err) {
               alert('Error: ' + err);
@@ -1068,9 +1114,9 @@ function guardarEntregaServer(participante, producto, proyecto, buenas, rechazad
     const m   = _headerMap_(sh);
     const row = Math.max(sh.getLastRow() + 1, DATA_START_ROW);
 
-    const total    = buenas * precio;
-    const impuesto = total * 0.05;
-    const neto     = total * 0.95;
+    const total    = buenas * precio;          // subtotal bruto
+    const impuesto = total * 0.05;             // 5% pequeño contribuyente
+    const totalPagar = total + impuesto;       // lo que el programa paga
     const quincena = _obtenerQuincenaActiva_();
 
     // Fecha desde el formulario (YYYY-MM-DD) o hoy si no viene
@@ -1102,14 +1148,14 @@ function guardarEntregaServer(participante, producto, proyecto, buenas, rechazad
     sh.getRange(row, m["precio unit. (q)"]).setValue(precio || 0);
     sh.getRange(row, m["total q"]).setValue(total || 0);
     if (m["impuesto pc (5%)"]) sh.getRange(row, m["impuesto pc (5%)"]).setValue(impuesto);
-    if (m["total neto"])       sh.getRange(row, m["total neto"]).setValue(neto);
+    if (m["total a pagar"])    sh.getRange(row, m["total a pagar"]).setValue(totalPagar);
     sh.getRange(row, m["estado pago"]).setValue("Pendiente");
     if (metodo && metodo.length > 0) sh.getRange(row, m["método pago"]).setValue(metodo);
 
     _guardarHistorico_("productos", producto);
     _guardarHistorico_("proyectos", proyecto);
 
-    SpreadsheetApp.getActive().toast("✅ Neto Q " + neto.toFixed(2), null, 2);
+    SpreadsheetApp.getActive().toast("✅ Total Q " + totalPagar.toFixed(2), null, 2);
     actualizarTodo();
     return true;
   } catch (e) {
@@ -1912,9 +1958,9 @@ function _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ) {
     const q = String(r[m["quincena"]     - 1] || "").trim();
     if (!p) continue;
     if (q && q !== nombreQ) continue; // omitir filas de otras quincenas
-    // Usar Total Neto si existe (descuenta impuesto PC 5%), si no Total Q
-    const colNeto = m["total neto"] ? m["total neto"] - 1 : m["total q"] - 1;
-    totales[p] = (totales[p] || 0) + (Number(r[colNeto]) || 0);
+    // Usar Total a Pagar si existe (bruto + imp 5%), si no Total Q
+    const colPagar = m["total a pagar"] ? m["total a pagar"] - 1 : m["total q"] - 1;
+    totales[p] = (totales[p] || 0) + (Number(r[colPagar]) || 0);
   }
 
   // Info bancaria de Participantes Activos
