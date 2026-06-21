@@ -60,6 +60,7 @@ function onOpen() {
       .addItem("🚀 Instalar sistema",         "instalarSistema")
       .addItem("♻️ Reinstalar sistema",       "reinstalarSistema")
       .addItem("🗑️ Eliminar hojas obsoletas", "limpiarHojasObsoletas")
+      .addItem("🧹 Limpiar datos de prueba",  "limpiarDatosPrueba")
       .addItem("🔄 Actualizar Cheques/Transf.", "actualizarHojasNuevas")
       .addItem("🔁 Migrar datos existentes",  "migrarDatosExistentes")
       .addItem("⛔ Desinstalar sistema",       "desinstalarSistema")
@@ -217,6 +218,70 @@ function desinstalarSistema() {
     SpreadsheetApp.getActive().toast("🗑️ Sistema desinstalado", "Listo", 4);
   } catch (e) {
     console.log("Error al desinstalar: " + e.message);
+  }
+}
+
+// Borra solo datos de transacción (pruebas). Conserva Participantes y Catálogo.
+function limpiarDatosPrueba() {
+  try {
+    const ss = SpreadsheetApp.getActive();
+    const ui = SpreadsheetApp.getUi();
+
+    const ok = ui.alert(
+      "🧹 Limpiar datos de prueba",
+      "Esto borrará:\n\n" +
+      "• Recepciones (todas las entregas)\n" +
+      "• Historial Quincenas\n" +
+      "• PERIODOS (quincenas creadas)\n" +
+      "• Cheques / Transferencias\n" +
+      "• Historial_Pagos\n" +
+      "• Pagos Pendientes\n" +
+      "• Resumen Participantes\n\n" +
+      "NO toca: Participantes Activos, Participantes Inactivos, Catálogo_Productos.\n\n" +
+      "¿Continuar?",
+      ui.ButtonSet.YES_NO
+    );
+    if (ok !== ui.Button.YES) return;
+
+    const log = [];
+
+    // Hojas con encabezados en fila 1, datos desde fila 2
+    const hojasFila1 = [
+      SHEET_HIST_QUINCENAS,
+      SHEET_CHEQUES,
+      SHEET_TRANSFERENCIAS,
+      SHEET_HISTORIAL_PAGOS,
+      SHEET_PAGOS_PEND,
+      SHEET_RESUMEN_PART,
+    ];
+    hojasFila1.forEach(nombre => {
+      const sh = ss.getSheetByName(nombre);
+      if (!sh || sh.getLastRow() < 2) return;
+      sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).clearContent();
+      log.push(nombre);
+    });
+
+    // PERIODOS: encabezado en fila 1, datos desde fila 2
+    const shPer = ss.getSheetByName(SHEET_PERIODOS);
+    if (shPer && shPer.getLastRow() > 1) {
+      shPer.getRange(2, 1, shPer.getLastRow() - 1, shPer.getLastColumn()).clearContent();
+      log.push(SHEET_PERIODOS);
+    }
+
+    // Recepciones: encabezado en fila 4, datos desde fila 5
+    const shRec = ss.getSheetByName(SHEET_RECEPCIONES);
+    if (shRec && shRec.getLastRow() >= DATA_START_ROW) {
+      shRec.getRange(DATA_START_ROW, 1, shRec.getLastRow() - DATA_START_ROW + 1, shRec.getLastColumn()).clearContent();
+      log.push(SHEET_RECEPCIONES);
+    }
+
+    ui.alert(
+      "✅ Datos de prueba eliminados",
+      "Se limpiaron:\n• " + log.join("\n• ") + "\n\nParticipantes y catálogo intactos.",
+      ui.ButtonSet.OK
+    );
+  } catch (e) {
+    SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 4);
   }
 }
 
