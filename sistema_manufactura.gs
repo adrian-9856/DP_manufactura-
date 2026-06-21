@@ -699,7 +699,17 @@ function agregarEntregaRapida() {
     const ss  = SpreadsheetApp.getActive();
     const cat = ss.getSheetByName(SHEET_CATALOGOS);
 
-    const participantes = cat.getRange("B2:B1000").getValues().flat().filter(x => x);
+    // Solo participantes con Etapa = Inscritx
+    const participantesData = [];
+    if (cat) {
+      const dataCat = cat.getDataRange().getValues();
+      for (let i = 1; i < dataCat.length; i++) {
+        const nombre = String(dataCat[i][CAT_COL.NOMBRE] || "").trim();
+        const etapa  = String(dataCat[i][CAT_COL.ETAPA]  || "").trim();
+        const id     = String(dataCat[i][CAT_COL.ID]      || "").trim();
+        if (nombre && etapa === "Inscritx") participantesData.push({ nombre, id });
+      }
+    }
     const proyectos     = _obtenerHistorico_("proyectos");
     const metodos       = _obtenerHistorico_("metodos");
 
@@ -796,15 +806,15 @@ function agregarEntregaRapida() {
       <div class="container">
         <div class="header">
           <h1>📦 Nueva Entrega</h1>
-          <span class="badge">📅 \${quincenaActiva}</span><br>
-          <span class="subtitle">\${productosConPrecio.length} producto(s) en catálogo</span>
+          <span class="badge">📅 ${quincenaActiva}</span><br>
+          <span class="subtitle">${productosConPrecio.length} producto(s) en catálogo</span>
         </div>
 
         <div class="form-group">
           <label>Participante *</label>
           <select id="participante" required>
             <option value="">— Seleccionar —</option>
-            \${participantes.map(p => '<option value="'+p+'">'+p+'</option>').join('')}
+            ${participantesData.map(p => '<option value="'+p.nombre+'">'+(p.id ? p.nombre+' – '+p.id : p.nombre)+'</option>').join('')}
           </select>
           <div class="error" id="err-part">Requerido</div>
         </div>
@@ -813,8 +823,8 @@ function agregarEntregaRapida() {
           <label>Producto *</label>
           <input type="text" id="producto" list="productos-list" placeholder="Escribe o selecciona..." required>
           <datalist id="productos-list">
-            \${productosConPrecio.map(p => '<option value="'+p.nombre+'">').join('')}
-            \${productosHistorico.map(p => '<option value="'+p+'">').join('')}
+            ${productosConPrecio.map(p => '<option value="'+p.nombre+'">').join('')}
+            ${productosHistorico.map(p => '<option value="'+p+'">').join('')}
           </datalist>
           <div class="error" id="err-prod">Requerido</div>
         </div>
@@ -823,7 +833,7 @@ function agregarEntregaRapida() {
           <label>Proyecto / Cliente *</label>
           <input type="text" id="proyecto" list="proyectos-list" placeholder="Creamos, Cliente X..." required>
           <datalist id="proyectos-list">
-            \${proyectos.map(p => '<option value="'+p+'">').join('')}
+            ${proyectos.map(p => '<option value="'+p+'">').join('')}
           </datalist>
           <div class="error" id="err-proy">Requerido</div>
         </div>
@@ -860,7 +870,7 @@ function agregarEntregaRapida() {
       </div>
 
       <script>
-        const productosConPrecio = \${JSON.stringify(productosConPrecio)};
+        const productosConPrecio = ${JSON.stringify(productosConPrecio)};
 
         ['buenas','precio'].forEach(id =>
           document.getElementById(id).addEventListener('input', actualizarResumen)
