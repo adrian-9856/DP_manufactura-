@@ -927,9 +927,13 @@ function agregarEntregaRapida() {
           <div class="resumen-row total"><span>Total a pagar:</span><span>Q <span id="res-total">0.00</span></span></div>
         </div>
 
+        <div id="toast" style="display:none; background:#e8f5e9; border-left:3px solid #43a047;
+          padding:10px 14px; border-radius:6px; margin-top:12px; font-size:13px; color:#2e7d32;
+          font-weight:600;"></div>
+
         <div class="buttons">
-          <button class="btn-guardar" onclick="guardarEntrega()">✅ Guardar</button>
-          <button class="btn-cancelar" onclick="google.script.host.close()">✕ Cancelar</button>
+          <button class="btn-guardar" id="btn-guardar" onclick="guardarEntrega()">✅ Guardar</button>
+          <button class="btn-cancelar" onclick="google.script.host.close()">✕ Cerrar</button>
         </div>
         <div class="loading" id="loading">⏳ Guardando...</div>
       </div>
@@ -976,14 +980,41 @@ function agregarEntregaRapida() {
           return part && prod && proy && b > 0 && p > 0;
         }
 
+        let contadorRegistros = 0;
+
+        function mostrarToast(msg) {
+          const t = document.getElementById('toast');
+          t.textContent = msg;
+          t.style.display = 'block';
+          setTimeout(function() { t.style.display = 'none'; }, 3000);
+        }
+
+        function limpiarParaSiguiente(buenas, precio, total) {
+          contadorRegistros++;
+          mostrarToast('✅ Registro #' + contadorRegistros + ' guardado — Q ' + total.toFixed(2));
+          // Conserva participante y proyecto; limpia producto, unidades y precio
+          document.getElementById('producto').value    = '';
+          document.getElementById('buenas').value      = '0';
+          document.getElementById('rechazadas').value  = '0';
+          document.getElementById('precio').value      = '0';
+          document.getElementById('resumen').style.display = 'none';
+          document.getElementById('producto').focus();
+        }
+
         function guardarEntrega() {
           if (!validar()) return;
-          const btn = document.querySelector('.btn-guardar');
+          const btn = document.getElementById('btn-guardar');
+          const b   = Number(document.getElementById('buenas').value)  || 0;
+          const p   = Number(document.getElementById('precio').value)  || 0;
           btn.disabled = true; btn.style.opacity = '0.6';
           document.getElementById('loading').style.display = 'block';
           google.script.run
-            .withSuccessHandler(() => google.script.host.close())
-            .withFailureHandler(err => {
+            .withSuccessHandler(function() {
+              btn.disabled = false; btn.style.opacity = '1';
+              document.getElementById('loading').style.display = 'none';
+              limpiarParaSiguiente(b, p, b * p);
+            })
+            .withFailureHandler(function(err) {
               alert('Error: ' + err);
               btn.disabled = false; btn.style.opacity = '1';
               document.getElementById('loading').style.display = 'none';
