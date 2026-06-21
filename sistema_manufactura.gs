@@ -30,6 +30,7 @@ const DATA_START_ROW = 5;
 const RECEPCIONES_HEADERS = [
   "#", "Fecha entrega", "Quincena", "Participante", "Creamos ID", "Proyecto / Cliente", "Producto",
   "Unidades buenas", "Unidades rechazadas", "Precio unit. (Q)", "Total Q",
+  "Impuesto PC (5%)", "Total Neto",
   "Estado pago", "Fecha pago", "Método pago", "Comprobante", "Notas / calidad"
 ];
 
@@ -809,6 +810,9 @@ function agregarEntregaRapida() {
       }
     }
 
+    const tz       = Session.getScriptTimeZone();
+    const fechaHoy = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd");
+
     const html = HtmlService.createHtmlOutput(`
     <!DOCTYPE html>
     <html>
@@ -876,6 +880,11 @@ function agregarEntregaRapida() {
         </div>
 
         <div class="form-group">
+          <label>Fecha de entrega</label>
+          <input type="date" id="fecha" value="${fechaHoy}">
+        </div>
+
+        <div class="form-group">
           <label>Participante *</label>
           <select id="participante" required>
             <option value="">— Seleccionar —</option>
@@ -924,7 +933,9 @@ function agregarEntregaRapida() {
         <div class="resumen" id="resumen" style="display:none;">
           <div class="resumen-row"><span>Unidades buenas:</span><span id="res-buenas">0</span></div>
           <div class="resumen-row"><span>Precio unitario:</span><span>Q <span id="res-precio">0.00</span></span></div>
-          <div class="resumen-row total"><span>Total a pagar:</span><span>Q <span id="res-total">0.00</span></span></div>
+          <div class="resumen-row"><span>Total bruto:</span><span>Q <span id="res-bruto">0.00</span></span></div>
+          <div class="resumen-row" style="color:#e53935;"><span>Imp. Pequeño Contribuyente (5%):</span><span>− Q <span id="res-impuesto">0.00</span></span></div>
+          <div class="resumen-row total"><span>Total neto a pagar:</span><span>Q <span id="res-total">0.00</span></span></div>
         </div>
 
         <div id="toast" style="display:none; background:#e8f5e9; border-left:3px solid #43a047;
@@ -958,12 +969,17 @@ function agregarEntregaRapida() {
         }
 
         function actualizarResumen() {
-          const b = Number(document.getElementById('buenas').value) || 0;
-          const p = Number(document.getElementById('precio').value) || 0;
-          document.getElementById('res-buenas').textContent = b;
-          document.getElementById('res-precio').textContent = p.toFixed(2);
-          document.getElementById('res-total').textContent  = (b * p).toFixed(2);
-          document.getElementById('resumen').style.display  = (b > 0 || p > 0) ? 'block' : 'none';
+          const b       = Number(document.getElementById('buenas').value) || 0;
+          const p       = Number(document.getElementById('precio').value) || 0;
+          const bruto   = b * p;
+          const imp     = bruto * 0.05;
+          const neto    = bruto * 0.95;
+          document.getElementById('res-buenas').textContent   = b;
+          document.getElementById('res-precio').textContent   = p.toFixed(2);
+          document.getElementById('res-bruto').textContent    = bruto.toFixed(2);
+          document.getElementById('res-impuesto').textContent = imp.toFixed(2);
+          document.getElementById('res-total').textContent    = neto.toFixed(2);
+          document.getElementById('resumen').style.display    = (b > 0 || p > 0) ? 'block' : 'none';
         }
 
         function validar() {
@@ -1003,16 +1019,17 @@ function agregarEntregaRapida() {
 
         function guardarEntrega() {
           if (!validar()) return;
-          const btn = document.getElementById('btn-guardar');
-          const b   = Number(document.getElementById('buenas').value)  || 0;
-          const p   = Number(document.getElementById('precio').value)  || 0;
+          const btn   = document.getElementById('btn-guardar');
+          const b     = Number(document.getElementById('buenas').value) || 0;
+          const p     = Number(document.getElementById('precio').value) || 0;
+          const neto  = b * p * 0.95;
           btn.disabled = true; btn.style.opacity = '0.6';
           document.getElementById('loading').style.display = 'block';
           google.script.run
             .withSuccessHandler(function() {
               btn.disabled = false; btn.style.opacity = '1';
               document.getElementById('loading').style.display = 'none';
-              limpiarParaSiguiente(b, p, b * p);
+              limpiarParaSiguiente(b, p, neto);
             })
             .withFailureHandler(function(err) {
               alert('Error: ' + err);
@@ -1026,7 +1043,8 @@ function agregarEntregaRapida() {
               Number(document.getElementById('buenas').value),
               Number(document.getElementById('rechazadas').value),
               Number(document.getElementById('precio').value),
-              ""
+              "",
+              document.getElementById('fecha').value
             );
         }
       </script>
@@ -1034,7 +1052,7 @@ function agregarEntregaRapida() {
     </html>
   `)
     .setWidth(500)
-    .setHeight(640);
+    .setHeight(700);
 
     SpreadsheetApp.getUi().showModalDialog(html, "Nueva Entrega Rápida");
   } catch (e) {
@@ -1042,15 +1060,24 @@ function agregarEntregaRapida() {
   }
 }
 
-function guardarEntregaServer(participante, producto, proyecto, buenas, rechazadas, precio, metodo) {
+function guardarEntregaServer(participante, producto, proyecto, buenas, rechazadas, precio, metodo, fechaStr) {
   try {
     const ss  = SpreadsheetApp.getActive();
     const sh  = ss.getSheetByName(SHEET_RECEPCIONES);
     const cat = ss.getSheetByName(SHEET_CATALOGOS);
     const m   = _headerMap_(sh);
     const row = Math.max(sh.getLastRow() + 1, DATA_START_ROW);
+
     const total    = buenas * precio;
-    const quincena = _obtenerQuincenaActiva_(); // Mejora 1
+    const impuesto = total * 0.05;
+    const neto     = total * 0.95;
+    const quincena = _obtenerQuincenaActiva_();
+
+    // Fecha desde el formulario (YYYY-MM-DD) o hoy si no viene
+    const tz    = Session.getScriptTimeZone();
+    const fecha = fechaStr
+      ? new Date(fechaStr + "T12:00:00")
+      : new Date();
 
     let creamosID = "";
     if (cat) {
@@ -1064,8 +1091,8 @@ function guardarEntregaServer(participante, producto, proyecto, buenas, rechazad
     }
 
     sh.getRange(row, m["#"]).setValue(row - DATA_START_ROW + 1);
-    sh.getRange(row, m["fecha entrega"]).setValue(new Date());
-    sh.getRange(row, m["quincena"]).setValue(quincena);           // Mejora 1
+    sh.getRange(row, m["fecha entrega"]).setValue(fecha);
+    sh.getRange(row, m["quincena"]).setValue(quincena);
     sh.getRange(row, m["participante"]).setValue(participante || "");
     sh.getRange(row, m["creamos id"]).setValue(creamosID);
     sh.getRange(row, m["proyecto / cliente"]).setValue(proyecto || "");
@@ -1074,14 +1101,15 @@ function guardarEntregaServer(participante, producto, proyecto, buenas, rechazad
     sh.getRange(row, m["unidades rechazadas"]).setValue(rechazadas || 0);
     sh.getRange(row, m["precio unit. (q)"]).setValue(precio || 0);
     sh.getRange(row, m["total q"]).setValue(total || 0);
+    if (m["impuesto pc (5%)"]) sh.getRange(row, m["impuesto pc (5%)"]).setValue(impuesto);
+    if (m["total neto"])       sh.getRange(row, m["total neto"]).setValue(neto);
     sh.getRange(row, m["estado pago"]).setValue("Pendiente");
     if (metodo && metodo.length > 0) sh.getRange(row, m["método pago"]).setValue(metodo);
 
     _guardarHistorico_("productos", producto);
     _guardarHistorico_("proyectos", proyecto);
-    if (metodo && metodo.length > 0) _guardarHistorico_("metodos", metodo);
 
-    SpreadsheetApp.getActive().toast("✅ Q " + total.toFixed(2), null, 2);
+    SpreadsheetApp.getActive().toast("✅ Neto Q " + neto.toFixed(2), null, 2);
     actualizarTodo();
     return true;
   } catch (e) {
@@ -1884,7 +1912,9 @@ function _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ) {
     const q = String(r[m["quincena"]     - 1] || "").trim();
     if (!p) continue;
     if (q && q !== nombreQ) continue; // omitir filas de otras quincenas
-    totales[p] = (totales[p] || 0) + (Number(r[m["total q"] - 1]) || 0);
+    // Usar Total Neto si existe (descuenta impuesto PC 5%), si no Total Q
+    const colNeto = m["total neto"] ? m["total neto"] - 1 : m["total q"] - 1;
+    totales[p] = (totales[p] || 0) + (Number(r[colNeto]) || 0);
   }
 
   // Info bancaria de Participantes Activos
