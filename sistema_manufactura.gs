@@ -62,6 +62,7 @@ function onOpen() {
       .addItem("🗑️ Eliminar hojas obsoletas", "limpiarHojasObsoletas")
       .addItem("🧹 Limpiar datos de prueba",  "limpiarDatosPrueba")
       .addItem("🔄 Actualizar Cheques/Transf.", "actualizarHojasNuevas")
+      .addItem("🔧 Reparar Nº Cuenta y CID",   "repararDatosPago")
       .addItem("🔁 Migrar datos existentes",  "migrarDatosExistentes")
       .addItem("⛔ Desinstalar sistema",       "desinstalarSistema")
       .addSeparator()
@@ -365,6 +366,61 @@ function limpiarHojasObsoletas() {
     ss.toast("✅ " + existentes.length + " hoja(s) eliminada(s).", null, 4);
   } catch (e) {
     SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
+  }
+}
+
+// Repara Nº Cuenta (texto) y Creamos ID en filas existentes de Cheques/Transferencias
+function repararDatosPago() {
+  try {
+    const ss  = SpreadsheetApp.getActive();
+    const cat = ss.getSheetByName(SHEET_CATALOGOS);
+    const log = [];
+
+    // Mapa nombre → { cid, numCuenta }
+    const mapaParticipantes = {};
+    if (cat) {
+      cat.getDataRange().getValues().slice(1).forEach(r => {
+        const nombre = String(r[CAT_COL.NOMBRE] || "").trim();
+        if (!nombre) return;
+        mapaParticipantes[nombre] = {
+          cid:       String(r[CAT_COL.ID]        || "").trim(),
+          numCuenta: String(r[CAT_COL.NUM_CUENTA] || "").trim(),
+        };
+      });
+    }
+
+    [SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_HISTORIAL_PAGOS].forEach(nombre => {
+      const sh = ss.getSheetByName(nombre);
+      if (!sh || sh.getLastRow() < 3) return;
+      const nRows = sh.getLastRow() - 2;
+      const data  = sh.getRange(3, 1, nRows, 11).getValues();
+
+      for (let i = 0; i < data.length; i++) {
+        const row      = data[i];
+        const nomPart  = String(row[0] || "").trim();
+        if (!nomPart) continue;
+        const fila     = i + 3;
+        const info     = mapaParticipantes[nomPart] || {};
+
+        // Rellenar Creamos ID si está vacío
+        if (!String(row[1] || "").trim() && info.cid) {
+          sh.getRange(fila, 2).setValue(info.cid);
+        }
+        // Forzar Nº Cuenta como texto exacto
+        const cuentaActual = String(row[4] || "").trim();
+        const cuentaCorr   = info.numCuenta || cuentaActual;
+        sh.getRange(fila, 5).setValue(cuentaCorr).setNumberFormat("@");
+      }
+      log.push(nombre + " (" + nRows + " filas)");
+    });
+
+    SpreadsheetApp.getUi().alert(
+      "✅ Reparación completada",
+      "Se repararon:\n• " + log.join("\n• "),
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  } catch (e) {
+    SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 4);
   }
 }
 
