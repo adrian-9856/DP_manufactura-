@@ -1324,7 +1324,9 @@ function actualizarResumenParticipantes() {
       if (!a.cid) a.cid = String(r[m["creamos id"] - 1] || "").trim();
       a.b  += Number(r[m["unidades buenas"]    - 1]) || 0;
       a.re += Number(r[m["unidades rechazadas"] - 1]) || 0;
-      const tq  = Number(r[m["total a pagar"] ? m["total a pagar"] - 1 : m["total q"] - 1]) || 0;
+      const tap = m["total a pagar"] ? Number(r[m["total a pagar"] - 1]) || 0 : 0;
+      const tqb = Number(r[m["total q"] - 1]) || 0;
+      const tq  = tap > 0 ? tap : tqb * 1.05;
       a.q  += tq;
       const estado = String(r[m["estado pago"] - 1] || "").trim().toLowerCase();
       if (estado === "quincena cerrada")          a.pagado    += tq;
@@ -1579,7 +1581,9 @@ function actualizarDashboard() {
 
     const ub     = Number(r[m["unidades buenas"]    - 1]) || 0;
     const ur     = Number(r[m["unidades rechazadas"] - 1]) || 0;
-    const tq     = Number(r[m["total a pagar"] ? m["total a pagar"] - 1 : m["total q"] - 1]) || 0;
+    const tapD   = m["total a pagar"] ? Number(r[m["total a pagar"] - 1]) || 0 : 0;
+    const tqbD   = Number(r[m["total q"] - 1]) || 0;
+    const tq     = tapD > 0 ? tapD : tqbD * 1.05;
     const estado = String(r[m["estado pago"] - 1] || "").trim();
 
     stats.totalQ  += tq;
@@ -2323,7 +2327,9 @@ function actualizarHistorialQuincenas() {
     byQ[q].entregas++;
     byQ[q].ub  += Number(r[mRec["unidades buenas"]    - 1]) || 0;
     byQ[q].ur  += Number(r[mRec["unidades rechazadas"] - 1]) || 0;
-    byQ[q].tq  += Number(r[mRec["total a pagar"] ? mRec["total a pagar"] - 1 : mRec["total q"] - 1]) || 0;
+    const tapH = mRec["total a pagar"] ? Number(r[mRec["total a pagar"] - 1]) || 0 : 0;
+    const tqbH = Number(r[mRec["total q"] - 1]) || 0;
+    byQ[q].tq += tapH > 0 ? tapH : tqbH * 1.05;
     byQ[q].parts.add(p);
   }
 
