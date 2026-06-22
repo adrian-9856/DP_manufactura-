@@ -467,6 +467,8 @@ function _setupRecepciones_(sh) {
 
   sh.getRange(`A${HEADER_ROW + 1}:${lastCol}1000`).setBackground("#ffffff").setFontColor("#212121");
   sh.getRange(`A${HEADER_ROW + 1}:${lastCol}1000`).setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  // Formato fecha en columna B (Fecha entrega)
+  sh.getRange(`B${HEADER_ROW + 1}:B1000`).setNumberFormat("dd/MM/yyyy");
 }
 
 function _colLetter_(col) {
@@ -1137,7 +1139,8 @@ function guardarEntregaServer(participante, producto, proyecto, buenas, rechazad
     }
 
     sh.getRange(row, m["#"]).setValue(row - DATA_START_ROW + 1);
-    sh.getRange(row, m["fecha entrega"]).setValue(fecha);
+    const celdaFecha = sh.getRange(row, m["fecha entrega"]);
+    celdaFecha.setValue(fecha).setNumberFormat("dd/MM/yyyy");
     sh.getRange(row, m["quincena"]).setValue(quincena);
     sh.getRange(row, m["participante"]).setValue(participante || "");
     sh.getRange(row, m["creamos id"]).setValue(creamosID);
@@ -1508,10 +1511,12 @@ function aplicarColoresAutomaticos() {
     if (estado === "Pagado") {
       sh.getRange(rowNum, 1, 1, ncols).setBackground("#c8e6c9").setFontColor("#1b5e20").setFontWeight("bold");
     } else if (estado === "Pendiente") {
-      if (dias > 14) {
+      // Solo se pone rojo cuando ya pasó la quincena completa (35 días = ~mes y medio)
+      // Pendiente reciente: blanco; pendiente antiguo: amarillo suave
+      if (dias > 35) {
         sh.getRange(rowNum, 1, 1, ncols).setBackground("#ffebee").setFontColor("#c62828").setFontWeight("bold");
       } else {
-        sh.getRange(rowNum, 1, 1, ncols).setBackground("#fff9c4").setFontColor("#f57f17");
+        sh.getRange(rowNum, 1, 1, ncols).setBackground("#ffffff").setFontColor("#212121");
       }
     } else {
       sh.getRange(rowNum, 1, 1, ncols).setBackground("#ffffff").setFontColor("#212121");
