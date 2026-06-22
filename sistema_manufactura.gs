@@ -55,33 +55,39 @@ const CAT_COL = {
 // ========================= MENU =========================
 function onOpen() {
   try {
-    SpreadsheetApp.getUi()
-      .createMenu("⚙️ Manufactura")
-      .addItem("🚀 Instalar sistema",         "instalarSistema")
-      .addItem("♻️ Reinstalar sistema",       "reinstalarSistema")
-      .addItem("🗑️ Eliminar hojas obsoletas", "limpiarHojasObsoletas")
-      .addItem("🧹 Limpiar datos de prueba",  "limpiarDatosPrueba")
-      .addItem("🔄 Actualizar Cheques/Transf.", "actualizarHojasNuevas")
-      .addItem("🔧 Reparar Nº Cuenta y CID",   "repararDatosPago")
-      .addItem("🔢 Redondear montos existentes", "repararRedondeoMontos")
-      .addItem("🔁 Resincronizar totales de pago", "repararTotalesPagos")
-      .addItem("🔁 Migrar datos existentes",  "migrarDatosExistentes")
-      .addItem("⛔ Desinstalar sistema",       "desinstalarSistema")
+    const ui = SpreadsheetApp.getUi();
+
+    // Botón independiente — acceso directo a Nueva Entrega
+    ui.createMenu("➕ Nueva Entrega")
+      .addItem("➕ Abrir formulario de entrega", "agregarEntregaRapida")
+      .addToUi();
+
+    // Menú principal del sistema
+    ui.createMenu("⚙️ Manufactura")
+      // — Operaciones diarias —
+      .addItem("✏️ Editar fila seleccionada",    "editarFilaSeleccionada")
+      .addItem("✅ Marcar fila como pagada",      "marcarFilaPagada")
       .addSeparator()
-      .addItem("➕ Nueva entrega (rápida)",   "agregarEntregaRapida")
-      .addItem("✏️ Editar fila seleccionada", "editarFilaSeleccionada")
-      .addItem("✅ Marcar fila como pagada",  "marcarFilaPagada")
+      // — Quincenas —
+      .addItem("🗓️ Crear quincena inicial",      "crearQuincenaInicial")
+      .addItem("📅 Cerrar quincena actual",      "cerrarQuincenaActual")
+      .addItem("🗃️ Cerrar mes manualmente",      "cerrarMes")
       .addSeparator()
-      .addItem("🗓️ Crear quincena inicial",   "crearQuincenaInicial")
-      .addItem("📅 Cerrar quincena actual",   "cerrarQuincenaActual")
-      .addItem("🗃️ Cerrar mes manualmente",   "cerrarMes")
+      // — Mantenimiento —
+      .addItem("🔢 Reparar montos y totales",    "repararRedondeoMontos")
+      .addItem("🧹 Limpiar datos de prueba",     "limpiarDatosPrueba")
+      .addItem("📋 Actualizar participación",    "actualizarParticipacionProgramas")
+      .addItem("🔄 Actualizar todo",             "actualizarTodo")
       .addSeparator()
-      .addItem("📋 Actualizar participación", "actualizarParticipacionProgramas")
-      .addItem("🔄 Actualizar todo",          "actualizarTodo")
+      // — Sistema —
+      .addItem("🚀 Instalar sistema",            "instalarSistema")
+      .addItem("♻️ Reinstalar sistema",          "reinstalarSistema")
+      .addItem("⛔ Desinstalar sistema",          "desinstalarSistema")
       .addSeparator()
-      .addItem("⏱️ Instalar triggers",        "crearTriggers")
-      .addItem("👤 Trigger inactivos",        "instalarTriggerInactivos")
-      .addItem("⏹️ Eliminar triggers",        "eliminarTriggers")
+      // — Triggers —
+      .addItem("⏱️ Instalar triggers",           "crearTriggers")
+      .addItem("👤 Trigger inactivos",           "instalarTriggerInactivos")
+      .addItem("⏹️ Eliminar triggers",           "eliminarTriggers")
       .addToUi();
   } catch (e) {
     // Silenciosamente ignorar si getUi no está disponible
