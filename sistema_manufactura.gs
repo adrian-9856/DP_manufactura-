@@ -30,8 +30,7 @@ const DATA_START_ROW = 5;
 const RECEPCIONES_HEADERS = [
   "#", "Fecha entrega", "Quincena", "Participante", "Creamos ID", "Proyecto / Cliente", "Producto",
   "Unidades buenas", "Unidades rechazadas", "Precio unit. (Q)", "Total Q",
-  "Impuesto PC (5%)", "Total a Pagar",
-  "Estado pago", "Fecha pago", "Método pago", "Comprobante", "Notas / calidad"
+  "Impuesto PC (5%)", "Total a Pagar", "Estado pago"
 ];
 
 // Columnas del catálogo de participantes (0-indexed)
@@ -277,19 +276,31 @@ function limpiarDatosPrueba() {
 
     const log = [];
 
-    // Hojas con encabezados en fila 1, datos desde fila 2
-    const hojasFila1 = [
+    // Hojas con Título(fila1) + Encabezados(fila2) + datos desde fila 3
+    const hojasFila3 = [
       SHEET_HIST_QUINCENAS,
       SHEET_CHEQUES,
       SHEET_TRANSFERENCIAS,
       SHEET_HISTORIAL_PAGOS,
+    ];
+    hojasFila3.forEach(nombre => {
+      const sh = ss.getSheetByName(nombre);
+      if (!sh || sh.getLastRow() < 3) return;
+      const rng = sh.getRange(3, 1, sh.getLastRow() - 2, sh.getLastColumn());
+      rng.clearContent();
+      rng.setBackground(null).setFontColor(null).setFontWeight("normal");
+      log.push(nombre);
+    });
+
+    // Hojas con Encabezados(fila1) + datos desde fila 2
+    const hojasFila2 = [
       SHEET_PAGOS_PEND,
       SHEET_RESUMEN_PART,
     ];
-    hojasFila1.forEach(nombre => {
+    hojasFila2.forEach(nombre => {
       const sh = ss.getSheetByName(nombre);
       if (!sh || sh.getLastRow() < 2) return;
-      const rng = sh.getRange(2, 1, Math.max(sh.getLastRow() - 1, 1), sh.getLastColumn());
+      const rng = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn());
       rng.clearContent();
       rng.setBackground(null).setFontColor(null).setFontWeight("normal");
       log.push(nombre);
@@ -465,17 +476,14 @@ function _setupRecepciones_(sh) {
   sh.setFrozenRows(HEADER_ROW);
   sh.setRowHeight(HEADER_ROW, 30);
 
-  // #|Fecha|Quincena|Participante|CreamosID|Proyecto|Producto|UBuenas|URechaz|PrecioU|TotalQ|ImpPC|TotalPagar|Estado|FechaPago|Metodo|Comprobante|Notas
-  const widths = [45, 90, 110, 150, 100, 160, 120, 100, 120, 90, 80, 90, 90, 80, 80, 100, 120, 150];
+  // #|Fecha|Quincena|Participante|CreamosID|Proyecto|Producto|UBuenas|URechaz|PrecioU|TotalQ|ImpPC|TotalPagar|Estado
+  const widths = [45, 90, 110, 150, 100, 160, 120, 100, 120, 90, 90, 95, 95, 90];
   widths.forEach((w, i) => sh.setColumnWidth(i + 1, w));
 
   sh.getRange(`A${HEADER_ROW + 1}:${lastCol}1000`).setBackground("#ffffff").setFontColor("#212121");
   sh.getRange(`A${HEADER_ROW + 1}:${lastCol}1000`).setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
-  // Formato fecha en columnas de fecha
-  sh.getRange(`B${HEADER_ROW + 1}:B1000`).setNumberFormat("dd/MM/yyyy");   // Fecha entrega
-  sh.getRange(`O${HEADER_ROW + 1}:O1000`).setNumberFormat("dd/MM/yyyy");   // Fecha pago
-  // Formato monetario en columnas J, K, L, M (Precio, Total Q, Impuesto, Total a Pagar)
-  sh.getRange(`J${HEADER_ROW + 1}:M1000`).setNumberFormat('"Q "#,##0.00');
+  sh.getRange(`B${HEADER_ROW + 1}:B1000`).setNumberFormat("dd/MM/yyyy");       // Fecha entrega
+  sh.getRange(`J${HEADER_ROW + 1}:M1000`).setNumberFormat('"Q "#,##0.00');     // Precio, Total Q, Impuesto, Total a Pagar
 }
 
 function _colLetter_(col) {
@@ -1160,7 +1168,6 @@ function guardarEntregaServer(participante, producto, proyecto, buenas, rechazad
     if (m["impuesto pc (5%)"]) sh.getRange(row, m["impuesto pc (5%)"]).setValue(impuesto).setNumberFormat('"Q "#,##0.00');
     if (m["total a pagar"])    sh.getRange(row, m["total a pagar"]).setValue(totalPagar).setNumberFormat('"Q "#,##0.00');
     sh.getRange(row, m["estado pago"]).setValue("Pendiente");
-    if (metodo && metodo.length > 0) sh.getRange(row, m["método pago"]).setValue(metodo);
 
     _guardarHistorico_("productos", producto);
     _guardarHistorico_("proyectos", proyecto);
@@ -1230,12 +1237,10 @@ function marcarFilaPagada() {
     const hoy = new Date();
 
     sh.getRange(row, m["estado pago"]).setValue("Pagado");
-    sh.getRange(row, m["fecha pago"]).setValue(hoy);
-    if (!sh.getRange(row, m["método pago"]).getValue()) sh.getRange(row, m["método pago"]).setValue("Efectivo");
 
-    // Mejora 4: registrar en Historial_Pagos
+    // Registrar en Historial_Pagos
     const rowData    = sh.getRange(row, 1, 1, sh.getLastColumn()).getValues()[0];
-    const metodo     = String(rowData[m["método pago"]      - 1] || "Efectivo").trim();
+    const metodo     = "Transferencia";
     const quincena   = String(rowData[m["quincena"]         - 1] || "").trim();
     const participante = String(rowData[m["participante"]   - 1] || "").trim();
     const creamosID  = String(rowData[m["creamos id"]       - 1] || "").trim();
