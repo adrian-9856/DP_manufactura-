@@ -1167,7 +1167,7 @@ function guardarEntregaServer(participante, producto, proyecto, buenas, rechazad
     sh.getRange(row, m["total q"]).setValue(total || 0).setNumberFormat('"Q "#,##0.00');
     if (m["impuesto pc (5%)"]) sh.getRange(row, m["impuesto pc (5%)"]).setValue(impuesto).setNumberFormat('"Q "#,##0.00');
     if (m["total a pagar"])    sh.getRange(row, m["total a pagar"]).setValue(totalPagar).setNumberFormat('"Q "#,##0.00');
-    sh.getRange(row, m["estado pago"]).setValue("Pendiente");
+    sh.getRange(row, m["estado pago"]).setValue("Espera cierre quincena");
 
     _guardarHistorico_("productos", producto);
     _guardarHistorico_("proyectos", proyecto);
@@ -1316,9 +1316,12 @@ function actualizarResumenParticipantes() {
       if (!a.cid) a.cid = String(r[m["creamos id"] - 1] || "").trim();
       a.b  += Number(r[m["unidades buenas"]    - 1]) || 0;
       a.re += Number(r[m["unidades rechazadas"] - 1]) || 0;
-      const tq = Number(r[m["total q"] - 1]) || 0;
+      const tq  = Number(r[m["total a pagar"] ? m["total a pagar"] - 1 : m["total q"] - 1]) || 0;
       a.q  += tq;
       const estado = String(r[m["estado pago"] - 1] || "").trim().toLowerCase();
+      if (estado === "quincena cerrada")          a.pagado    += tq;
+      if (estado === "espera cierre quincena")    a.pendiente += tq;
+      // compatibilidad con valores anteriores
       if (estado === "pagado")    a.pagado    += tq;
       if (estado === "pendiente") a.pendiente += tq;
       const q = String(r[m["quincena"] - 1] || "").trim();
@@ -1520,18 +1523,14 @@ function aplicarColoresAutomaticos() {
     const rowNum = i + 1;
     const ncols  = RECEPCIONES_HEADERS.length;
 
-    if (estado === "Pagado") {
-      sh.getRange(rowNum, 1, 1, ncols).setBackground("#c8e6c9").setFontColor("#1b5e20").setFontWeight("bold");
-    } else if (estado === "Pendiente") {
-      // Solo se pone rojo cuando ya pasó la quincena completa (35 días = ~mes y medio)
-      // Pendiente reciente: blanco; pendiente antiguo: amarillo suave
-      if (dias > 35) {
-        sh.getRange(rowNum, 1, 1, ncols).setBackground("#ffebee").setFontColor("#c62828").setFontWeight("bold");
-      } else {
-        sh.getRange(rowNum, 1, 1, ncols).setBackground("#ffffff").setFontColor("#212121");
-      }
+    if (estado === "Quincena cerrada" || estado === "Pagado") {
+      // Verde: quincena procesada / pago registrado
+      sh.getRange(rowNum, 1, 1, ncols).setBackground("#e8f5e9").setFontColor("#1b5e20").setFontWeight("normal");
+    } else if (estado === "Espera cierre quincena" || estado === "Pendiente") {
+      // Amarillo suave: esperando cierre
+      sh.getRange(rowNum, 1, 1, ncols).setBackground("#fff9c4").setFontColor("#f57f17").setFontWeight("normal");
     } else {
-      sh.getRange(rowNum, 1, 1, ncols).setBackground("#ffffff").setFontColor("#212121");
+      sh.getRange(rowNum, 1, 1, ncols).setBackground("#ffffff").setFontColor("#212121").setFontWeight("normal");
     }
 
     sh.getRange(rowNum, 1, 1, ncols)
@@ -1572,15 +1571,17 @@ function actualizarDashboard() {
 
     const ub     = Number(r[m["unidades buenas"]    - 1]) || 0;
     const ur     = Number(r[m["unidades rechazadas"] - 1]) || 0;
-    const tq     = Number(r[m["total q"]            - 1]) || 0;
-    const estado = r[m["estado pago"] - 1];
+    const tq     = Number(r[m["total a pagar"] ? m["total a pagar"] - 1 : m["total q"] - 1]) || 0;
+    const estado = String(r[m["estado pago"] - 1] || "").trim();
 
     stats.totalQ  += tq;
     stats.ubTotal += ub;
     stats.urTotal += ur;
 
-    if (estado === "Pagado")   { stats.pagados++;    stats.montoPagado    += tq; }
-    if (estado === "Pendiente"){ stats.pendientes++; stats.montoPendiente += tq; }
+    const esCerrado  = estado === "Quincena cerrada" || estado === "Pagado";
+    const esPendiente = estado === "Espera cierre quincena" || estado === "Pendiente";
+    if (esCerrado)  { stats.pagados++;    stats.montoPagado    += tq; }
+    if (esPendiente){ stats.pendientes++; stats.montoPendiente += tq; }
   }
 
   const promIngresos = stats.participantes.size > 0 ? stats.totalQ / stats.participantes.size : 0;
@@ -1955,6 +1956,20 @@ function crearQuincenaInicial() {
   }
 }
 
+// Cambia el estado de todas las filas de una quincena a "Quincena cerrada"
+function _marcarQuincenaCerrada_(ss, nombreQ) {
+  const sh = ss.getSheetByName(SHEET_RECEPCIONES);
+  if (!sh) return;
+  const m    = _headerMap_(sh);
+  const data = sh.getDataRange().getValues();
+  for (let i = DATA_START_ROW - 1; i < data.length; i++) {
+    const q = String(data[i][m["quincena"] - 1] || "").trim();
+    if (q !== nombreQ) continue;
+    const colEstado = m["estado pago"];
+    if (colEstado) sh.getRange(i + 1, colEstado).setValue("Quincena cerrada");
+  }
+}
+
 // Calcula montos por participante en Recepciones (filtrado por quincena) y los escribe en Cheques o Transferencias
 function _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ) {
   const rec = ss.getSheetByName(SHEET_RECEPCIONES);
@@ -2219,7 +2234,10 @@ function cerrarQuincenaActual() {
     // 1. Generar pagos en Cheques / Transferencias
     _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ);
 
-    // 2. Marcar quincena como Cerrada en PERIODOS
+    // 2. Marcar filas de esta quincena como "Quincena cerrada" en Recepciones
+    _marcarQuincenaCerrada_(ss, nombreQ);
+
+    // 3. Marcar quincena como Cerrada en PERIODOS
     shP.getRange(filaActiva, 5).setValue("Cerrado");
 
     // 3. Si es Q2 → archivar pagos a Historial y guardar Drive
@@ -2297,7 +2315,7 @@ function actualizarHistorialQuincenas() {
     byQ[q].entregas++;
     byQ[q].ub  += Number(r[mRec["unidades buenas"]    - 1]) || 0;
     byQ[q].ur  += Number(r[mRec["unidades rechazadas"] - 1]) || 0;
-    byQ[q].tq  += Number(r[mRec["total q"]            - 1]) || 0;
+    byQ[q].tq  += Number(r[mRec["total a pagar"] ? mRec["total a pagar"] - 1 : mRec["total q"] - 1]) || 0;
     byQ[q].parts.add(p);
   }
 
