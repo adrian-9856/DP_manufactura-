@@ -1283,14 +1283,22 @@ function calcularTotalesColumnas() {
 
 function actualizarEstadoPagosAutomatico() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_RECEPCIONES);
-  const m  = _headerMap_(sh);
+  if (!sh || sh.getLastRow() < DATA_START_ROW) return;
+  const m    = _headerMap_(sh);
+  const colP = m["participante"];
+  const colE = m["estado pago"];
+  const colT = m["total a pagar"] || m["total q"];
+  if (!colP || !colE || !colT) return;
 
   for (let r = DATA_START_ROW; r <= sh.getLastRow(); r++) {
-    const part = sh.getRange(r, m["participante"]).getValue();
+    const part = sh.getRange(r, colP).getValue();
     if (!part) continue;
-    const total = Number(sh.getRange(r, m["total q"]).getValue()) || 0;
-    const fp    = sh.getRange(r, m["fecha pago"]).getValue();
-    sh.getRange(r, m["estado pago"]).setValue(fp ? "Pagado" : (total > 0 ? "Pendiente" : "Sin monto"));
+    const estado = String(sh.getRange(r, colE).getValue() || "").trim();
+    // Solo asigna estado si la celda está vacía o tiene un valor obsoleto
+    if (!estado || estado === "Sin monto") {
+      const total = Number(sh.getRange(r, colT).getValue()) || 0;
+      sh.getRange(r, colE).setValue(total > 0 ? "Espera cierre quincena" : "");
+    }
   }
 }
 
