@@ -63,6 +63,7 @@ function onOpen() {
       .addItem("🧹 Limpiar datos de prueba",  "limpiarDatosPrueba")
       .addItem("🔄 Actualizar Cheques/Transf.", "actualizarHojasNuevas")
       .addItem("🔧 Reparar Nº Cuenta y CID",   "repararDatosPago")
+      .addItem("🔢 Redondear montos existentes", "repararRedondeoMontos")
       .addItem("🔁 Migrar datos existentes",  "migrarDatosExistentes")
       .addItem("⛔ Desinstalar sistema",       "desinstalarSistema")
       .addSeparator()
@@ -424,7 +425,86 @@ function repararDatosPago() {
   }
 }
 
-// Aplica la nueva estructura a Cheques y Transferencias (seguro: solo si están vacías o con OK del usuario)
+/// Redondea montos existentes a quetzales enteros en Recepciones, Cheques, Transferencias e Historial_Pagos
+function repararRedondeoMontos() {
+  try {
+    const ss  = SpreadsheetApp.getActive();
+    const ui  = SpreadsheetApp.getUi();
+    const log = [];
+
+    // 1. Recepciones: columnas monetarias Total Q, Impuesto PC, Total a Pagar
+    const shRec = ss.getSheetByName(SHEET_RECEPCIONES);
+    if (shRec && shRec.getLastRow() >= DATA_START_ROW) {
+      const m      = _headerMap_(shRec);
+      const colTQ  = m["total q"];
+      const colImp = m["impuesto pc (5%)"] || m["impuesto pc"];
+      const colTAP = m["total a pagar"];
+      const nRows  = shRec.getLastRow() - DATA_START_ROW + 1;
+      const data   = shRec.getRange(DATA_START_ROW, 1, nRows, shRec.getLastColumn()).getValues();
+      let fixes = 0;
+      for (let i = 0; i < data.length; i++) {
+        const fila = DATA_START_ROW + i;
+        [[colTQ, "total q"], [colImp, "impuesto"], [colTAP, "total a pagar"]].forEach(([col, _]) => {
+          if (!col) return;
+          const val = Number(data[i][col - 1]);
+          if (!isNaN(val) && val !== Math.round(val)) {
+            shRec.getRange(fila, col).setValue(Math.round(val));
+            fixes++;
+          }
+        });
+        // Recalcular Impuesto y Total a Pagar desde Total Q si los valores son 0 o faltan
+        if (colTQ && colImp && colTAP) {
+          const tq = Number(data[i][colTQ - 1]);
+          const imp = Number(data[i][colImp - 1]);
+          const tap = Number(data[i][colTAP - 1]);
+          if (tq > 0 && (imp === 0 || tap === 0)) {
+            const newImp = Math.round(tq * 0.05);
+            const newTap = Math.round(tq + newImp);
+            shRec.getRange(fila, colImp).setValue(newImp);
+            shRec.getRange(fila, colTAP).setValue(newTap);
+            fixes += 2;
+          }
+        }
+      }
+      log.push("Recepciones: " + fixes + " celda(s) corregida(s)");
+    }
+
+    // 2. Cheques, Transferencias, Historial_Pagos: columna Total a Pagar (col 8 = H)
+    [SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_HISTORIAL_PAGOS].forEach(nombre => {
+      const sh = ss.getSheetByName(nombre);
+      if (!sh || sh.getLastRow() < 3) return;
+      const nRows = sh.getLastRow() - 2;
+      const data  = sh.getRange(3, 1, nRows, 10).getValues();
+      let fixes = 0;
+      for (let i = 0; i < data.length; i++) {
+        const fila = i + 3;
+        // col 8 = Total a Pagar (índice 7)
+        [7, 8, 9].forEach(idx => {
+          const val = Number(data[i][idx]);
+          if (val && !isNaN(val) && val !== Math.round(val)) {
+            sh.getRange(fila, idx + 1).setValue(Math.round(val));
+            fixes++;
+          }
+        });
+      }
+      if (fixes > 0) log.push(nombre + ": " + fixes + " celda(s) corregida(s)");
+    });
+
+    // 3. Refrescar colores y totales
+    calcularTotalesColumnas();
+    actualizarDashboard();
+
+    ui.alert(
+      "✅ Redondeo completado",
+      log.length ? "Correcciones aplicadas:\n• " + log.join("\n• ") : "No había decimales que corregir.",
+      ui.ButtonSet.OK
+    );
+  } catch (e) {
+    SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 4);
+  }
+}
+
+/ Aplica la nueva estructura a Cheques y Transferencias (seguro: solo si están vacías o con OK del usuario)
 function actualizarHojasNuevas() {
   try {
     const ss = SpreadsheetApp.getActive();
