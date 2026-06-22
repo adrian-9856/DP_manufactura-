@@ -1092,8 +1092,8 @@ function agregarEntregaRapida() {
           const b       = Number(document.getElementById('buenas').value) || 0;
           const p       = Number(document.getElementById('precio').value) || 0;
           const bruto   = b * p;
-          const imp     = bruto * 0.05;
-          const total   = bruto + imp;          // programa paga bruto + impuesto
+          const imp     = Math.round(bruto * 0.05);
+          const total   = Math.round(bruto + imp);  // programa paga bruto + impuesto
           document.getElementById('res-buenas').textContent   = b;
           document.getElementById('res-precio').textContent   = p.toFixed(2);
           document.getElementById('res-bruto').textContent    = bruto.toFixed(2);
@@ -1188,9 +1188,9 @@ function guardarEntregaServer(participante, producto, proyecto, buenas, rechazad
     const m   = _headerMap_(sh);
     const row = Math.max(sh.getLastRow() + 1, DATA_START_ROW);
 
-    const total    = buenas * precio;          // subtotal bruto
-    const impuesto = total * 0.05;             // 5% pequeño contribuyente
-    const totalPagar = total + impuesto;       // lo que el programa paga
+    const total      = buenas * precio;         // subtotal bruto
+    const impuesto   = Math.round(total * 0.05);          // 5% pequeño contribuyente
+    const totalPagar = Math.round(total + impuesto);      // lo que el programa paga
     const quincena = _obtenerQuincenaActiva_();
 
     // Fecha desde el formulario (YYYY-MM-DD) o hoy si no viene
@@ -2063,7 +2063,7 @@ function _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ) {
     if (q && q !== nombreQ) continue; // omitir filas de otras quincenas
     // Usar Total a Pagar si existe (bruto + imp 5%), si no Total Q
     const colPagar = m["total a pagar"] ? m["total a pagar"] - 1 : m["total q"] - 1;
-    totales[p] = (totales[p] || 0) + (Number(r[colPagar]) || 0);
+    totales[p] = (totales[p] || 0) + Math.round(Number(r[colPagar]) || 0);
   }
 
   // Info bancaria de Participantes Activos
