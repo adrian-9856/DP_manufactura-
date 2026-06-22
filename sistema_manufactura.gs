@@ -176,12 +176,16 @@ function migrarDatosExistentes() {
         // Anchos para columnas nuevas
         shRecMig.setColumnWidth(12, 90); // Impuesto PC
         shRecMig.setColumnWidth(13, 90); // Total a Pagar
-        // Limpiar formato en datos para que quede limpio
+        // Limpiar formato en datos
         if (shRecMig.getLastRow() >= DATA_START_ROW) {
           shRecMig.getRange(`A${DATA_START_ROW}:${lastCol}1000`)
             .setBackground("#ffffff").setFontColor("#212121");
         }
-        log.push("Recepciones: encabezados actualizados (Impuesto PC + Total a Pagar)");
+        // Corregir formatos de columnas monetarias y de fecha
+        shRecMig.getRange(`B${DATA_START_ROW}:B1000`).setNumberFormat("dd/MM/yyyy");
+        shRecMig.getRange(`O${DATA_START_ROW}:O1000`).setNumberFormat("dd/MM/yyyy");
+        shRecMig.getRange(`J${DATA_START_ROW}:M1000`).setNumberFormat('"Q "#,##0.00');
+        log.push("Recepciones: encabezados y formatos actualizados");
       }
     }
 
@@ -467,8 +471,11 @@ function _setupRecepciones_(sh) {
 
   sh.getRange(`A${HEADER_ROW + 1}:${lastCol}1000`).setBackground("#ffffff").setFontColor("#212121");
   sh.getRange(`A${HEADER_ROW + 1}:${lastCol}1000`).setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
-  // Formato fecha en columna B (Fecha entrega)
-  sh.getRange(`B${HEADER_ROW + 1}:B1000`).setNumberFormat("dd/MM/yyyy");
+  // Formato fecha en columnas de fecha
+  sh.getRange(`B${HEADER_ROW + 1}:B1000`).setNumberFormat("dd/MM/yyyy");   // Fecha entrega
+  sh.getRange(`O${HEADER_ROW + 1}:O1000`).setNumberFormat("dd/MM/yyyy");   // Fecha pago
+  // Formato monetario en columnas J, K, L, M (Precio, Total Q, Impuesto, Total a Pagar)
+  sh.getRange(`J${HEADER_ROW + 1}:M1000`).setNumberFormat('"Q "#,##0.00');
 }
 
 function _colLetter_(col) {
@@ -1148,10 +1155,10 @@ function guardarEntregaServer(participante, producto, proyecto, buenas, rechazad
     sh.getRange(row, m["producto"]).setValue(producto || "");
     sh.getRange(row, m["unidades buenas"]).setValue(buenas || 0);
     sh.getRange(row, m["unidades rechazadas"]).setValue(rechazadas || 0);
-    sh.getRange(row, m["precio unit. (q)"]).setValue(precio || 0);
-    sh.getRange(row, m["total q"]).setValue(total || 0);
-    if (m["impuesto pc (5%)"]) sh.getRange(row, m["impuesto pc (5%)"]).setValue(impuesto);
-    if (m["total a pagar"])    sh.getRange(row, m["total a pagar"]).setValue(totalPagar);
+    sh.getRange(row, m["precio unit. (q)"]).setValue(precio || 0).setNumberFormat('"Q "#,##0.00');
+    sh.getRange(row, m["total q"]).setValue(total || 0).setNumberFormat('"Q "#,##0.00');
+    if (m["impuesto pc (5%)"]) sh.getRange(row, m["impuesto pc (5%)"]).setValue(impuesto).setNumberFormat('"Q "#,##0.00');
+    if (m["total a pagar"])    sh.getRange(row, m["total a pagar"]).setValue(totalPagar).setNumberFormat('"Q "#,##0.00');
     sh.getRange(row, m["estado pago"]).setValue("Pendiente");
     if (metodo && metodo.length > 0) sh.getRange(row, m["método pago"]).setValue(metodo);
 
