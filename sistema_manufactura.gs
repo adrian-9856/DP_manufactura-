@@ -714,6 +714,7 @@ function _setupPagosHoja_(sh, titulo, color) {
   sh.setFrozenRows(2);
 
   sh.getRange("G3:I1000").setNumberFormat('"Q " #,##0.00');
+  sh.getRange("E3:E1000").setNumberFormat("@");   // Nº Cuenta como texto (evita notación científica)
   sh.getRange("A3:K1000").setBackground("#fafafa").setFontColor("#212121");
   sh.getRange("A3:K1000").setBorder(true, true, true, true, false, true, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
@@ -773,6 +774,7 @@ function _setupHistorialPagos_(sh) {
   sh.setFrozenRows(2);
 
   sh.getRange("G3:I1000").setNumberFormat('"Q " #,##0.00');
+  sh.getRange("E3:E1000").setNumberFormat("@"); // Nº Cuenta como texto
   sh.getRange("A3:L1000").setBackground("#f1f8e9").setFontColor("#212121");
   sh.getRange("A3:L1000").setBorder(true, true, true, true, false, true, "#c8e6c9", SpreadsheetApp.BorderStyle.SOLID);
 
@@ -2035,8 +2037,12 @@ function _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ) {
     const sh    = esChq ? shC : shT;
 
     if (esQ1) {
-      sh.appendRow([nombre, info.cid, info.banco, info.tipoCuenta, info.numCuenta, info.titular,
-                    monto, "", monto, mes, anio]);
+      const newRow = sh.getLastRow() + 1;
+      sh.getRange(newRow, 1, 1, 11).setValues([[
+        nombre, info.cid, info.banco, info.tipoCuenta, String(info.numCuenta), info.titular,
+        monto, "", monto, mes, anio
+      ]]);
+      sh.getRange(newRow, 5).setNumberFormat("@"); // Nº Cuenta como texto exacto
     } else {
       // Q2: buscar fila del mismo participante y mes para actualizar
       const nRows = sh.getLastRow() - 2;
@@ -2052,8 +2058,12 @@ function _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ) {
         }
       }
       if (!found) {
-        sh.appendRow([nombre, info.cid, info.banco, info.tipoCuenta, info.numCuenta, info.titular,
-                      0, monto, monto, mes, anio]);
+        const newRow2 = sh.getLastRow() + 1;
+        sh.getRange(newRow2, 1, 1, 11).setValues([[
+          nombre, info.cid, info.banco, info.tipoCuenta, String(info.numCuenta), info.titular,
+          0, monto, monto, mes, anio
+        ]]);
+        sh.getRange(newRow2, 5).setNumberFormat("@");
       }
     }
   }
