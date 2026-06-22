@@ -425,7 +425,7 @@ function repararDatosPago() {
   }
 }
 
-// Redondea Impuesto PC y Total a Pagar existentes, y reaplica formato Q a todas las columnas monetarias
+// Redondea y formatea montos en TODAS las hojas del sistema
 function repararRedondeoMontos() {
   try {
     const ss   = SpreadsheetApp.getActive();
@@ -433,7 +433,24 @@ function repararRedondeoMontos() {
     const log  = [];
     const fmtQ = '"Q "#,##0.00';
 
-    // 1. Recepciones
+    // --- helper: redondea valores numéricos en un rango y aplica formato Q ---
+    function _limpiarRango_(sh, startRow, col, numCols, label) {
+      if (!sh || sh.getLastRow() < startRow) return;
+      const nRows = sh.getLastRow() - startRow + 1;
+      const rng   = sh.getRange(startRow, col, nRows, numCols);
+      const vals  = rng.getValues();
+      let fixes = 0;
+      for (let i = 0; i < vals.length; i++) {
+        for (let j = 0; j < vals[i].length; j++) {
+          const v = Number(vals[i][j]);
+          if (v && !isNaN(v) && v !== Math.round(v)) { vals[i][j] = Math.round(v); fixes++; }
+        }
+      }
+      rng.setValues(vals).setNumberFormat(fmtQ);
+      log.push(label + ": " + fixes + " valor(es) ajustado(s)");
+    }
+
+    // 1. Recepciones — recalcula Impuesto y Total a Pagar desde Total Q con redondeo
     const shRec = ss.getSheetByName(SHEET_RECEPCIONES);
     if (shRec && shRec.getLastRow() >= DATA_START_ROW) {
       const m      = _headerMap_(shRec);
@@ -442,58 +459,45 @@ function repararRedondeoMontos() {
       const colImp = m["impuesto pc (5%)"] || m["impuesto pc"];
       const colTAP = m["total a pagar"];
       const nRows  = shRec.getLastRow() - DATA_START_ROW + 1;
-      const data   = shRec.getRange(DATA_START_ROW, 1, nRows, shRec.getLastColumn()).getValues();
+      const ncols  = shRec.getLastColumn();
+      const data   = shRec.getRange(DATA_START_ROW, 1, nRows, ncols).getValues();
       let fixes = 0;
-
       for (let i = 0; i < data.length; i++) {
-        const fila = DATA_START_ROW + i;
-        const tq   = Number(data[i][(colTQ  || 1) - 1]) || 0;
-        const imp0 = Number(data[i][(colImp || 1) - 1]) || 0;
-        const tap0 = Number(data[i][(colTAP || 1) - 1]) || 0;
+        const tq = Number(data[i][(colTQ || 1) - 1]) || 0;
         if (tq <= 0) continue;
-
         const newImp = Math.round(tq * 0.05);
         const newTap = Math.round(tq + newImp);
-
-        if (colImp && imp0 !== newImp) { shRec.getRange(fila, colImp).setValue(newImp); fixes++; }
-        if (colTAP && tap0 !== newTap) { shRec.getRange(fila, colTAP).setValue(newTap); fixes++; }
+        if (colImp) { data[i][colImp - 1] = newImp; fixes++; }
+        if (colTAP) { data[i][colTAP - 1] = newTap; fixes++; }
       }
-
-      // Reaplica formato Q a Precio, Total Q, Impuesto, Total a Pagar (4 cols desde la primera monetaria)
+      shRec.getRange(DATA_START_ROW, 1, nRows, ncols).setValues(data);
       const firstCol = colPU || colTQ;
-      if (firstCol && nRows > 0) {
-        shRec.getRange(DATA_START_ROW, firstCol, nRows, 4).setNumberFormat(fmtQ);
-      }
-      log.push("Recepciones: " + fixes + " valor(es) recalculado(s), formato Q restaurado en todas las filas");
+      if (firstCol) shRec.getRange(DATA_START_ROW, firstCol, nRows, 4).setNumberFormat(fmtQ);
+      log.push("Recepciones: " + fixes + " valor(es) recalculado(s), formato Q aplicado");
     }
 
-    // 2. Cheques, Transferencias, Historial_Pagos — cols G,H,I (7,8,9) son monetarias
+    // 2. Cheques, Transferencias, Historial_Pagos — cols G,H,I (7,8,9) = Quincena1, Quincena2, Total_Mes
     [SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_HISTORIAL_PAGOS].forEach(nombre => {
-      const sh = ss.getSheetByName(nombre);
-      if (!sh || sh.getLastRow() < 3) return;
-      const nRows = sh.getLastRow() - 2;
-      const data  = sh.getRange(3, 1, nRows, 10).getValues();
-      let fixes = 0;
-      for (let i = 0; i < data.length; i++) {
-        const fila = i + 3;
-        [6, 7, 8].forEach(idx => {
-          const val = Number(data[i][idx]);
-          if (val && !isNaN(val) && val !== Math.round(val)) {
-            sh.getRange(fila, idx + 1).setValue(Math.round(val));
-            fixes++;
-          }
-        });
-      }
-      sh.getRange(3, 7, nRows, 3).setNumberFormat(fmtQ);
-      log.push(nombre + ": " + fixes + " valor(es) ajustado(s), formato Q restaurado");
+      _limpiarRango_(ss.getSheetByName(nombre), 3, 7, 3, nombre);
     });
 
-    // 3. Refrescar totales y colores
-    calcularTotalesColumnas();
-    actualizarDashboard();
+    // 3. Resumen Participantes — cols F,G,H (6,7,8) = Total generado, Total pagado, Pendiente
+    _limpiarRango_(ss.getSheetByName(SHEET_RESUMEN_PART), 2, 6, 3, "Resumen Participantes");
+
+    // 4. Historial Quincenas — col G (7) = Total_Q
+    _limpiarRango_(ss.getSheetByName(SHEET_HIST_QUINCENAS), 3, 7, 1, "Historial Quincenas");
+
+    // 5. Reportes PowerBI — col J (10) = Total a Pagar
+    _limpiarRango_(ss.getSheetByName(SHEET_REPORTES), 3, 10, 1, "Reportes PowerBI");
+
+    // 6. Pagos Pendientes — col F (6) = Total Q
+    _limpiarRango_(ss.getSheetByName(SHEET_PAGOS_PEND), 2, 6, 1, "Pagos Pendientes");
+
+    // 7. Refrescar todos los cálculos y colores
+    actualizarTodo();
 
     ui.alert(
-      "✅ Redondeo y formato completados",
+      "✅ Redondeo y formato aplicados en todo el sistema",
       "• " + log.join("\n• "),
       ui.ButtonSet.OK
     );
@@ -1405,15 +1409,34 @@ function actualizarTodo() {
 
 function calcularTotalesColumnas() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_RECEPCIONES);
-  const m  = _headerMap_(sh);
+  if (!sh || sh.getLastRow() < DATA_START_ROW) return;
+  const m      = _headerMap_(sh);
+  const colPart = m["participante"];
+  const colUB   = m["unidades buenas"];
+  const colPU   = m["precio unit. (q)"];
+  const colTQ   = m["total q"];
+  const colImp  = m["impuesto pc (5%)"] || m["impuesto pc"];
+  const colTAP  = m["total a pagar"];
+  const nRows   = sh.getLastRow() - DATA_START_ROW + 1;
+  const ncols   = sh.getLastColumn();
+  const data    = sh.getRange(DATA_START_ROW, 1, nRows, ncols).getValues();
 
-  for (let r = DATA_START_ROW; r <= sh.getLastRow(); r++) {
-    const part = sh.getRange(r, m["participante"]).getValue();
-    if (!part) continue;
-    const b = Number(sh.getRange(r, m["unidades buenas"]).getValue()) || 0;
-    const p = Number(sh.getRange(r, m["precio unit. (q)"]).getValue()) || 0;
-    sh.getRange(r, m["total q"]).setValue(b * p);
+  for (let i = 0; i < data.length; i++) {
+    if (!data[i][colPart - 1]) continue;
+    const b   = Number(data[i][colUB  - 1]) || 0;
+    const p   = Number(data[i][colPU  - 1]) || 0;
+    const tq  = b * p;
+    const imp = Math.round(tq * 0.05);
+    const tap = Math.round(tq + imp);
+    data[i][colTQ  - 1] = tq;
+    if (colImp) data[i][colImp - 1] = imp;
+    if (colTAP) data[i][colTAP - 1] = tap;
   }
+  sh.getRange(DATA_START_ROW, 1, nRows, ncols).setValues(data);
+
+  // Reaplica formato Q a columnas monetarias
+  const firstCol = m["precio unit. (q)"] || colTQ;
+  if (firstCol) sh.getRange(DATA_START_ROW, firstCol, nRows, 4).setNumberFormat('"Q "#,##0.00');
 }
 
 function actualizarEstadoPagosAutomatico() {
