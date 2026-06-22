@@ -64,6 +64,7 @@ function onOpen() {
       .addItem("🔄 Actualizar Cheques/Transf.", "actualizarHojasNuevas")
       .addItem("🔧 Reparar Nº Cuenta y CID",   "repararDatosPago")
       .addItem("🔢 Redondear montos existentes", "repararRedondeoMontos")
+      .addItem("🔁 Resincronizar totales de pago", "repararTotalesPagos")
       .addItem("🔁 Migrar datos existentes",  "migrarDatosExistentes")
       .addItem("⛔ Desinstalar sistema",       "desinstalarSistema")
       .addSeparator()
@@ -476,10 +477,9 @@ function repararRedondeoMontos() {
       log.push("Recepciones: " + fixes + " valor(es) recalculado(s), formato Q aplicado");
     }
 
-    // 2. Cheques, Transferencias, Historial_Pagos — cols G,H,I (7,8,9) = Quincena1, Quincena2, Total_Mes
-    [SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_HISTORIAL_PAGOS].forEach(nombre => {
-      _limpiarRango_(ss.getSheetByName(nombre), 3, 7, 3, nombre);
-    });
+    // 2. Cheques, Transferencias, Historial_Pagos — re-sumar desde Recepciones (fuente única de verdad)
+    const logPagos = repararTotalesPagos(true); // true = modo silencioso
+    log.push(logPagos);
 
     // 3. Resumen Participantes — cols F,G,H (6,7,8) = Total generado, Total pagado, Pendiente
     _limpiarRango_(ss.getSheetByName(SHEET_RESUMEN_PART), 2, 6, 3, "Resumen Participantes");
@@ -503,6 +503,87 @@ function repararRedondeoMontos() {
     );
   } catch (e) {
     SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 4);
+  }
+}
+
+// Re-suma Quincena_1, Quincena_2 y Total_Mes directamente desde Recepciones para cada participante
+// Pasar silencioso=true para llamarlo desde repararRedondeoMontos sin segundo alert
+function repararTotalesPagos(silencioso) {
+  try {
+    const ss   = SpreadsheetApp.getActive();
+    const tz   = Session.getScriptTimeZone();
+    const fmtQ = '"Q "#,##0.00';
+
+    // Mapa quincena_nombre → {ordenQ:"Q1"/"Q2", mesKey:"June 2026"}
+    const shP = ss.getSheetByName(SHEET_PERIODOS);
+    if (!shP) return "PERIODOS no encontrado";
+    const mapPeriodo = {};
+    shP.getDataRange().getValues().slice(1).forEach(r => {
+      const nombre = String(r[1] || "").trim();
+      const fin    = r[3] instanceof Date ? r[3] : new Date(r[3]);
+      const orden  = String(r[5] || "").trim();
+      if (!nombre) return;
+      mapPeriodo[nombre] = { orden, mesKey: Utilities.formatDate(fin, tz, "MMMM yyyy") };
+    });
+
+    // Suma por participante+quincena desde Recepciones (valores ya redondeados individualmente)
+    const shRec = ss.getSheetByName(SHEET_RECEPCIONES);
+    if (!shRec || shRec.getLastRow() < DATA_START_ROW) return "Recepciones vacía";
+    const mRec   = _headerMap_(shRec);
+    const colPar = mRec["participante"];
+    const colQ   = mRec["quincena"];
+    const colTAP = mRec["total a pagar"] || mRec["total q"];
+    const dataRec = shRec.getRange(DATA_START_ROW, 1, shRec.getLastRow() - DATA_START_ROW + 1, shRec.getLastColumn()).getValues();
+
+    // recSumas["nombre|||quincenaNombre"] = suma de TAP redondeada individualmente
+    const recSumas = {};
+    dataRec.forEach(r => {
+      const nombre  = String(r[colPar - 1] || "").trim();
+      const qNombre = String(r[colQ   - 1] || "").trim();
+      if (!nombre || !qNombre) return;
+      const tap = Math.round(Number(r[colTAP - 1]) || 0);
+      const key = nombre + "|||" + qNombre;
+      recSumas[key] = (recSumas[key] || 0) + tap;
+    });
+
+    let totalFilas = 0;
+    [SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_HISTORIAL_PAGOS].forEach(sheetName => {
+      const sh = ss.getSheetByName(sheetName);
+      if (!sh || sh.getLastRow() < 3) return;
+      const nRows = sh.getLastRow() - 2;
+      const data  = sh.getRange(3, 1, nRows, 11).getValues();
+
+      for (let i = 0; i < data.length; i++) {
+        const nombre = String(data[i][0] || "").trim();
+        const mesKey = String(data[i][9] || "").trim(); // col J = Mes
+        if (!nombre || !mesKey) continue;
+
+        // Encontrar nombres de quincena Q1 y Q2 para este mes
+        let q1Nombre = "", q2Nombre = "";
+        Object.entries(mapPeriodo).forEach(([nQ, info]) => {
+          if (info.mesKey === mesKey) {
+            if (info.orden === "Q1") q1Nombre = nQ;
+            else if (info.orden === "Q2") q2Nombre = nQ;
+          }
+        });
+
+        const q1 = q1Nombre ? (recSumas[nombre + "|||" + q1Nombre] || 0) : (Number(data[i][6]) || 0);
+        const q2 = q2Nombre ? (recSumas[nombre + "|||" + q2Nombre] || 0) : (Number(data[i][7]) || 0);
+        const total = q1 + q2;
+
+        sh.getRange(i + 3, 7, 1, 3).setValues([[q1, q2, total]]).setNumberFormat(fmtQ);
+        totalFilas++;
+      }
+    });
+
+    const msg = "Cheques/Transferencias/Historial: " + totalFilas + " fila(s) resincronizadas desde Recepciones";
+    if (!silencioso) {
+      SpreadsheetApp.getUi().alert("✅ Totales resincronizados", msg, SpreadsheetApp.getUi().ButtonSet.OK);
+    }
+    return msg;
+  } catch (e) {
+    SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 4);
+    return "Error: " + e.message;
   }
 }
 
