@@ -624,24 +624,23 @@ function _setupReportes_(sh) {
   sh.clear();
   sh.clearFormats();
 
-  sh.getRange("A1").setValue("REPORTES PARA POWER BI").setFontWeight("bold").setFontSize(12)
-    .setBackground("#37474f").setFontColor("white");
+  sh.getRange("A1:L1").merge().setValue("REPORTES PARA POWER BI").setFontWeight("bold").setFontSize(12)
+    .setBackground("#37474f").setFontColor("white").setHorizontalAlignment("center");
 
-  sh.getRange("A2:M2").setValues([[
+  sh.getRange("A2:L2").setValues([[
     "Fecha", "Mes", "Creamos ID", "Participante", "Producto", "Proyecto",
     "Unidades Buenas", "Unidades Rechazadas", "Tasa Rechazo %",
-    "Total Q", "Estado Pago", "Método Pago", "Días Pendiente"
+    "Total a Pagar", "Estado Pago", "Días Pendiente"
   ]])
     .setFontWeight("bold").setBackground("#455a64").setFontColor("white")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
   sh.setFrozenRows(2);
   sh.setRowHeight(2, 25);
 
-  sh.setColumnWidth(1, 100);  sh.setColumnWidth(2, 100);  sh.setColumnWidth(3, 110);
-  sh.setColumnWidth(4, 150);  sh.setColumnWidth(5, 120);  sh.setColumnWidth(6, 120);
-  sh.setColumnWidth(7, 120);  sh.setColumnWidth(8, 130);  sh.setColumnWidth(9, 120);
-  sh.setColumnWidth(10, 100); sh.setColumnWidth(11, 120); sh.setColumnWidth(12, 120);
-  sh.setColumnWidth(13, 120);
+  sh.setColumnWidth(1, 100);  sh.setColumnWidth(2,  90);  sh.setColumnWidth(3,  110);
+  sh.setColumnWidth(4, 160);  sh.setColumnWidth(5, 120);  sh.setColumnWidth(6,  130);
+  sh.setColumnWidth(7, 110);  sh.setColumnWidth(8, 130);  sh.setColumnWidth(9,  110);
+  sh.setColumnWidth(10, 110); sh.setColumnWidth(11, 150); sh.setColumnWidth(12, 110);
 }
 
 // ── Mejora 1: PERIODOS ────────────────────────────────────────────────────────
@@ -1720,26 +1719,28 @@ function actualizarReportes() {
     const ub          = Number(r[m["unidades buenas"]    - 1]) || 0;
     const ur          = Number(r[m["unidades rechazadas"] - 1]) || 0;
     const tasaRechazo = (ub + ur) > 0 ? ur / (ub + ur) : 0;
-    const tq          = Number(r[m["total q"]  - 1]) || 0;
-    const estado      = String(r[m["estado pago"]  - 1] || "").trim();
-    const metodo      = String(r[m["método pago"]  - 1] || "").trim();
-    const dias        = isNaN(fe) ? 0 : Math.floor((hoy - fe) / (1000 * 60 * 60 * 24));
-    const creamosID   = mapaCreamosID[p] || "";
+    const tapR    = m["total a pagar"] ? Number(r[m["total a pagar"] - 1]) || 0 : 0;
+    const tqR     = Number(r[m["total q"] - 1]) || 0;
+    const total   = tapR > 0 ? tapR : tqR * 1.05;
+    const estado  = String(r[m["estado pago"] - 1] || "").trim();
+    const dias    = isNaN(fe) ? 0 : Math.floor((hoy - fe) / (1000 * 60 * 60 * 24));
+    const esPend  = estado === "Espera cierre quincena" || estado === "Pendiente";
+    const creamosID = mapaCreamosID[p] || "";
 
     reportes.push([
       fe, mesAño, creamosID, p,
       String(r[m["producto"]           - 1] || "").trim(),
       String(r[m["proyecto / cliente"] - 1] || "").trim(),
-      ub, ur, tasaRechazo, tq, estado, metodo,
-      estado === "Pendiente" ? dias : 0
+      ub, ur, tasaRechazo, total, estado,
+      esPend ? dias : 0
     ]);
   }
 
-  dst.getRange("A3:M1000").clearContent();
+  dst.getRange("A3:L1000").clearContent();
 
   if (reportes.length) {
-    dst.getRange(3, 1, reportes.length, 13).setValues(reportes);
-    dst.getRange(3, 1, reportes.length, 13)
+    dst.getRange(3, 1, reportes.length, 12).setValues(reportes);
+    dst.getRange(3, 1, reportes.length, 12)
       .setBackground("#ffffff").setFontColor("#212121")
       .setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
     dst.getRange(3, 1,  reportes.length, 1).setNumberFormat("yyyy-mm-dd");
