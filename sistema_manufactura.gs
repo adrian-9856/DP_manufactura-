@@ -425,51 +425,49 @@ function repararDatosPago() {
   }
 }
 
-/// Redondea montos existentes a quetzales enteros en Recepciones, Cheques, Transferencias e Historial_Pagos
+// Redondea Impuesto PC y Total a Pagar existentes, y reaplica formato Q a todas las columnas monetarias
 function repararRedondeoMontos() {
   try {
-    const ss  = SpreadsheetApp.getActive();
-    const ui  = SpreadsheetApp.getUi();
-    const log = [];
+    const ss   = SpreadsheetApp.getActive();
+    const ui   = SpreadsheetApp.getUi();
+    const log  = [];
+    const fmtQ = '"Q "#,##0.00';
 
-    // 1. Recepciones: columnas monetarias Total Q, Impuesto PC, Total a Pagar
+    // 1. Recepciones
     const shRec = ss.getSheetByName(SHEET_RECEPCIONES);
     if (shRec && shRec.getLastRow() >= DATA_START_ROW) {
       const m      = _headerMap_(shRec);
+      const colPU  = m["precio unit. (q)"] || m["precio unit.(q)"];
       const colTQ  = m["total q"];
       const colImp = m["impuesto pc (5%)"] || m["impuesto pc"];
       const colTAP = m["total a pagar"];
       const nRows  = shRec.getLastRow() - DATA_START_ROW + 1;
       const data   = shRec.getRange(DATA_START_ROW, 1, nRows, shRec.getLastColumn()).getValues();
       let fixes = 0;
+
       for (let i = 0; i < data.length; i++) {
         const fila = DATA_START_ROW + i;
-        [[colTQ, "total q"], [colImp, "impuesto"], [colTAP, "total a pagar"]].forEach(([col, _]) => {
-          if (!col) return;
-          const val = Number(data[i][col - 1]);
-          if (!isNaN(val) && val !== Math.round(val)) {
-            shRec.getRange(fila, col).setValue(Math.round(val));
-            fixes++;
-          }
-        });
-        // Recalcular Impuesto y Total a Pagar desde Total Q si los valores son 0 o faltan
-        if (colTQ && colImp && colTAP) {
-          const tq = Number(data[i][colTQ - 1]);
-          const imp = Number(data[i][colImp - 1]);
-          const tap = Number(data[i][colTAP - 1]);
-          if (tq > 0 && (imp === 0 || tap === 0)) {
-            const newImp = Math.round(tq * 0.05);
-            const newTap = Math.round(tq + newImp);
-            shRec.getRange(fila, colImp).setValue(newImp);
-            shRec.getRange(fila, colTAP).setValue(newTap);
-            fixes += 2;
-          }
-        }
+        const tq   = Number(data[i][(colTQ  || 1) - 1]) || 0;
+        const imp0 = Number(data[i][(colImp || 1) - 1]) || 0;
+        const tap0 = Number(data[i][(colTAP || 1) - 1]) || 0;
+        if (tq <= 0) continue;
+
+        const newImp = Math.round(tq * 0.05);
+        const newTap = Math.round(tq + newImp);
+
+        if (colImp && imp0 !== newImp) { shRec.getRange(fila, colImp).setValue(newImp); fixes++; }
+        if (colTAP && tap0 !== newTap) { shRec.getRange(fila, colTAP).setValue(newTap); fixes++; }
       }
-      log.push("Recepciones: " + fixes + " celda(s) corregida(s)");
+
+      // Reaplica formato Q a Precio, Total Q, Impuesto, Total a Pagar (4 cols desde la primera monetaria)
+      const firstCol = colPU || colTQ;
+      if (firstCol && nRows > 0) {
+        shRec.getRange(DATA_START_ROW, firstCol, nRows, 4).setNumberFormat(fmtQ);
+      }
+      log.push("Recepciones: " + fixes + " valor(es) recalculado(s), formato Q restaurado en todas las filas");
     }
 
-    // 2. Cheques, Transferencias, Historial_Pagos: columna Total a Pagar (col 8 = H)
+    // 2. Cheques, Transferencias, Historial_Pagos — cols G,H,I (7,8,9) son monetarias
     [SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_HISTORIAL_PAGOS].forEach(nombre => {
       const sh = ss.getSheetByName(nombre);
       if (!sh || sh.getLastRow() < 3) return;
@@ -478,8 +476,7 @@ function repararRedondeoMontos() {
       let fixes = 0;
       for (let i = 0; i < data.length; i++) {
         const fila = i + 3;
-        // col 8 = Total a Pagar (índice 7)
-        [7, 8, 9].forEach(idx => {
+        [6, 7, 8].forEach(idx => {
           const val = Number(data[i][idx]);
           if (val && !isNaN(val) && val !== Math.round(val)) {
             sh.getRange(fila, idx + 1).setValue(Math.round(val));
@@ -487,16 +484,17 @@ function repararRedondeoMontos() {
           }
         });
       }
-      if (fixes > 0) log.push(nombre + ": " + fixes + " celda(s) corregida(s)");
+      sh.getRange(3, 7, nRows, 3).setNumberFormat(fmtQ);
+      log.push(nombre + ": " + fixes + " valor(es) ajustado(s), formato Q restaurado");
     });
 
-    // 3. Refrescar colores y totales
+    // 3. Refrescar totales y colores
     calcularTotalesColumnas();
     actualizarDashboard();
 
     ui.alert(
-      "✅ Redondeo completado",
-      log.length ? "Correcciones aplicadas:\n• " + log.join("\n• ") : "No había decimales que corregir.",
+      "✅ Redondeo y formato completados",
+      "• " + log.join("\n• "),
       ui.ButtonSet.OK
     );
   } catch (e) {
