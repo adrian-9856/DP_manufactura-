@@ -192,7 +192,23 @@ function aplicarActualizaciones() {
       log.push("✅ Formato Q restaurado en " + nombre);
     });
 
-    // 4. Recalcular todo
+    // 4. Catálogo_Productos — agregar dropdown en Categoría (col A) si no existe
+    const shCat = ss.getSheetByName(SHEET_CATALOGO_PROD);
+    if (shCat) {
+      const catRule = shCat.getRange("A2").getDataValidation();
+      if (!catRule) {
+        shCat.getRange("A2:A1000").setDataValidation(
+          SpreadsheetApp.newDataValidation()
+            .requireValueInList(CAT_OPCIONES)
+            .setAllowInvalid(true).build()
+        );
+        log.push("✅ Dropdown de Categoría agregado en Catálogo_Productos (col A)");
+      } else {
+        log.push("☑️ Dropdown de Categoría ya existía en Catálogo_Productos");
+      }
+    }
+
+    // 5. Recalcular todo
     actualizarTodo();
     log.push("✅ Cálculos y colores actualizados");
 
@@ -1358,6 +1374,13 @@ function _setupCatalogo_(sh) {
   sh.getRange("C2:C1000").setNumberFormat('"Q " #,##0.00');
   sh.getRange("A2:D1000").setBackground("#ffffff").setFontColor("#212121");
   sh.getRange("A2:D1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+
+  // Dropdown para Categoría (col A)
+  sh.getRange("A2:A1000").setDataValidation(
+    SpreadsheetApp.newDataValidation()
+      .requireValueInList(CAT_OPCIONES)
+      .setAllowInvalid(true).build()
+  );
 }
 
 // ── Archivo de Recepciones (quincenas cerradas) ───────────────────────────────
@@ -1372,7 +1395,8 @@ function _setupArchivo_(sh) {
   sh.setFrozenRows(1);
   sh.setRowHeight(1, 25);
 
-  const widths = [45, 90, 110, 150, 100, 160, 120, 100, 120, 90, 80, 80, 80, 100, 120, 150];
+  // #  Fecha  Quincena  Participante  CreamosID  Proyecto  Categoría  Producto  UB  UR  Precio  TotalQ  Imp  TotalPagar  Estado
+  const widths = [45, 90, 110, 150, 100, 160, 130, 120, 100, 120, 90, 90, 95, 95, 90];
   widths.forEach((w, i) => sh.setColumnWidth(i + 1, w));
 
   sh.getRange("A2:P2000").setBackground("#fafafa").setFontColor("#212121");
@@ -1528,7 +1552,7 @@ function agregarEntregaRapida() {
         <div class="form-group">
           <label>Categoría *</label>
           <select id="categoria">
-            <option value="">— Se llena al elegir producto —</option>
+            <option value="" selected>— Seleccionar —</option>
             ${CAT_OPCIONES.map(c => '<option value="'+c+'">'+c+'</option>').join('')}
           </select>
         </div>
