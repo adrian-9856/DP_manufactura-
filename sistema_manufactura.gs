@@ -1438,7 +1438,6 @@ function agregarEntregaRapida() {
       });
     }
 
-    const productosHistorico = _obtenerHistorico_("productos");
 
     // Obtener quincena activa para mostrar en el form
     const shPer = ss.getSheetByName(SHEET_PERIODOS);
@@ -1541,7 +1540,6 @@ function agregarEntregaRapida() {
           <input type="text" id="producto" list="productos-list" placeholder="Escribe o selecciona..." required>
           <datalist id="productos-list">
             ${productosConPrecio.map(p => '<option value="'+p.nombre+'">').join('')}
-            ${productosHistorico.map(p => '<option value="'+p+'">').join('')}
           </datalist>
           <div class="error" id="err-prod">Requerido</div>
         </div>
