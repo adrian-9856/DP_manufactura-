@@ -47,14 +47,13 @@ const CAT_COL = {
   BANCO:          5,  // F – Banco
   TITULAR:        6,  // G – Titular
   DPI:            7,  // H – DPI
-  MI_EELO:        8,  // I – mi_eelo (checkbox)
-  EDUCACION:      9,  // J – Educación (checkbox)
-  INCLUSION_LAB: 10,  // K – Inclusión Laboral (checkbox)
-  APOYO_EMOC:    11,  // L – Apoyo Emocional (checkbox)
-  HIJOS:         12,  // M – N° Hijos
-  CCI:           13,  // N – CCI (checkbox)
-  CUNDE:         14,  // O – CUNDE (checkbox)
-  CUENTA_PAGO:   15,  // P – Cuenta de Pago (Creamos / mi-eelo)
+  EDUCACION:      8,  // I – Educación (checkbox)
+  INCLUSION_LAB:  9,  // J – Inclusión Laboral (checkbox)
+  APOYO_EMOC:    10,  // K – Apoyo Emocional (checkbox)
+  HIJOS:         11,  // L – N° Hijos
+  CCI:           12,  // M – CCI (checkbox)
+  CUNDE:         13,  // N – CUNDE (checkbox)
+  CUENTA_PAGO:   14,  // O – Cuenta de Pago (Creamos / mi-eelo)
 };
 
 // ========================= MENU =========================
@@ -109,19 +108,34 @@ function aplicarActualizaciones() {
     const ui  = SpreadsheetApp.getUi();
     const log = [];
 
-    // 1. Participantes Activos — agregar columna P "Cuenta de Pago" si no existe
+    // 1. Participantes Activos — eliminar mi_eelo (col I) si existe, agregar Cuenta de Pago
     const cat = ss.getSheetByName(SHEET_CATALOGOS);
     if (cat) {
-      const headers = cat.getRange(1, 1, 1, cat.getLastColumn()).getValues()[0];
+      const headers = cat.getRange(1, 1, 1, Math.max(cat.getLastColumn(), 16)).getValues()[0];
+
+      // Eliminar columna mi_eelo si todavía está en col I
+      if (String(headers[8] || "").toLowerCase().replace(/[_\-]/g, "").includes("mieelo")) {
+        cat.deleteColumn(9); // col I = 1-based index 9
+        log.push("✅ Columna 'mi_eelo' eliminada de Participantes Activos");
+        // Refrescar headers tras eliminar
+        headers.splice(8, 1);
+      } else {
+        log.push("☑️ Columna 'mi_eelo' ya no existe");
+      }
+
+      // Agregar Cuenta de Pago en col O (15 = índice 14) si no existe
       const yaExiste = headers.some(h => String(h).toLowerCase().includes("cuenta de pago"));
       if (!yaExiste) {
-        const colP = 16; // columna P
-        cat.getRange(1, colP)
+        const colO = 15; // columna O
+        cat.getRange(1, colO)
           .setValue("Cuenta de Pago")
           .setBackground("#e65100").setFontColor("#ffffff")
           .setFontWeight("bold").setHorizontalAlignment("center");
-        cat.setColumnWidth(colP, 120);
-        cat.getRange(2, colP, 999)
+        cat.setColumnWidth(colO, 120);
+        cat.getRange(1, colO).setValue("Cuenta de Pago")
+          .setBackground("#e65100").setFontColor("#ffffff").setFontWeight("bold")
+          .setHorizontalAlignment("center");
+        cat.getRange(2, colO, 999)
           .setBackground("#fff3e0")
           .setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID)
           .setDataValidation(
@@ -129,7 +143,7 @@ function aplicarActualizaciones() {
               .requireValueInList(["Creamos", "mi-eelo"])
               .setAllowInvalid(false).build()
           );
-        log.push("✅ Columna 'Cuenta de Pago' agregada en Participantes Activos (columna P)");
+        log.push("✅ Columna 'Cuenta de Pago' agregada en Participantes Activos (columna O)");
       } else {
         log.push("☑️ Columna 'Cuenta de Pago' ya existía");
       }
@@ -996,18 +1010,21 @@ function _setupCatalogos_(sh) {
     .setBackground("#263238").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
-  // I–L: programas sociales (antes hoja separada Programas_Participacion)
-  sh.getRange("I1:L1").setValues([["mi_eelo", "Educación", "Inclusión Laboral", "Apoyo Emocional"]])
+  // I–K: programas sociales
+  sh.getRange("I1:K1").setValues([["Educación", "Inclusión Laboral", "Apoyo Emocional"]])
     .setBackground("#2e7d32").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
-  // M–O: datos sociales
-  sh.getRange("M1:O1").setValues([["N° Hijos", "CCI", "CUNDE"]])
+  // L–N: datos sociales
+  sh.getRange("L1").setValue("N° Hijos")
+    .setBackground("#4a148c").setFontColor("#ffffff").setFontWeight("bold")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.getRange("M1:N1").setValues([["CCI", "CUNDE"]])
     .setBackground("#4a148c").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
-  // P: fuente de pago
-  sh.getRange("P1").setValue("Cuenta de Pago")
+  // O: fuente de pago
+  sh.getRange("O1").setValue("Cuenta de Pago")
     .setBackground("#e65100").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
@@ -1017,23 +1034,23 @@ function _setupCatalogos_(sh) {
   sh.setColumnWidth(1,  100); sh.setColumnWidth(2,  180); sh.setColumnWidth(3,  100);
   sh.setColumnWidth(4,  130); sh.setColumnWidth(5,  130); sh.setColumnWidth(6,  120);
   sh.setColumnWidth(7,  150); sh.setColumnWidth(8,  110);
-  sh.setColumnWidth(9,   90); sh.setColumnWidth(10,  90); sh.setColumnWidth(11, 140);
-  sh.setColumnWidth(12, 140); sh.setColumnWidth(13,  80); sh.setColumnWidth(14,  60);
-  sh.setColumnWidth(15,  70); sh.setColumnWidth(16, 120);
+  sh.setColumnWidth(9,   90); sh.setColumnWidth(10, 140); sh.setColumnWidth(11, 140);
+  sh.setColumnWidth(12,  80); sh.setColumnWidth(13,  60); sh.setColumnWidth(14,  70);
+  sh.setColumnWidth(15, 120);
 
   sh.getRange("A2:H1000").setBackground("#ffffff").setFontColor("#212121");
   sh.getRange("A2:H1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
-  sh.getRange("I2:L1000").insertCheckboxes();
-  sh.getRange("I2:L1000").setBackground("#f1f8e9");
-  sh.getRange("I2:L1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("I2:K1000").insertCheckboxes();
+  sh.getRange("I2:K1000").setBackground("#f1f8e9");
+  sh.getRange("I2:K1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
-  sh.getRange("M2:M1000").setBackground("#fce4ec").setFontColor("#212121");
-  sh.getRange("M2:M1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("L2:L1000").setBackground("#fce4ec").setFontColor("#212121");
+  sh.getRange("L2:L1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
-  sh.getRange("N2:O1000").insertCheckboxes();
-  sh.getRange("N2:O1000").setBackground("#fce4ec");
-  sh.getRange("N2:O1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("M2:N1000").insertCheckboxes();
+  sh.getRange("M2:N1000").setBackground("#fce4ec");
+  sh.getRange("M2:N1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
   sh.getRange("C2:C1000").setDataValidation(
     SpreadsheetApp.newDataValidation()
@@ -1046,8 +1063,8 @@ function _setupCatalogos_(sh) {
       .setAllowInvalid(true).build()
   );
 
-  // P: Cuenta de Pago dropdown
-  sh.getRange("P2:P1000")
+  // O: Cuenta de Pago dropdown
+  sh.getRange("O2:O1000")
     .setBackground("#fff3e0").setFontColor("#212121")
     .setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID)
     .setDataValidation(
@@ -2612,58 +2629,78 @@ function _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ) {
   }
 }
 
-// Escribe pagos desglosados por Servicio en Women Payment 26 (transferencias) y Cheques externo
+// Devuelve el tab del mes en una hoja externa; lo crea con encabezados si no existe
+function _obtenerTabMes_(ssExt, mes, esCheque) {
+  const HDR = ["Nombre","Tipo de Pago","Servicio","Banco","Tipo de Cuenta",
+               "Numero de Cta","Cuenta de Pago","Quincena 1","Quincena 2","Total Mes"];
+  const COLOR_HDR = esCheque ? "#1a237e" : "#263238";
+  let sh = ssExt.getSheetByName(mes);
+  if (!sh) {
+    sh = ssExt.insertSheet(mes);
+    sh.getRange(1, 1, 1, HDR.length).setValues([HDR])
+      .setFontWeight("bold").setBackground(COLOR_HDR).setFontColor("#ffffff")
+      .setHorizontalAlignment("center");
+    sh.setFrozenRows(1);
+    sh.setColumnWidth(1, 180); sh.setColumnWidth(2, 110); sh.setColumnWidth(3, 140);
+    sh.setColumnWidth(4, 110); sh.setColumnWidth(5, 110); sh.setColumnWidth(6, 140);
+    sh.setColumnWidth(7, 100); sh.setColumnWidth(8, 90);  sh.setColumnWidth(9, 90);
+    sh.setColumnWidth(10, 100);
+    sh.getRange("F2:F1000").setNumberFormat("@");
+    sh.getRange("H2:J1000").setNumberFormat('"Q "#,##0.00');
+  }
+  return sh;
+}
+
+// Escribe pagos desglosados por Servicio en Women Payment 26 y Cheques externo (tab por mes)
 function _enviarPagosExterno_(desglose, infoPart, ordenQ, mes) {
-  const fmtQ = '"Q "#,##0.00';
   const esQ1 = ordenQ === "Q1";
-  const colQ  = esQ1 ? 8 : 9;   // col H = Q1, col I = Q2 (1-based en hoja externa)
+  const colQ = esQ1 ? 8 : 9;   // col H = Q1, col I = Q2
 
   // Separar participantes: cheques vs transferencias
-  const filasPorServicioTrans = {};  // servicio → [{nombre, info, monto}]
-  const filasPorServicioChq   = {};
+  const filasTrans = {};
+  const filasChq   = {};
 
   for (const [nombre, servicios] of Object.entries(desglose)) {
     const info  = infoPart[nombre] || {};
     const esChq = (info.tipoCuenta || "").toLowerCase() === "cheque";
-    const dest  = esChq ? filasPorServicioChq : filasPorServicioTrans;
+    const dest  = esChq ? filasChq : filasTrans;
     for (const [servicio, monto] of Object.entries(servicios)) {
       if (!dest[servicio]) dest[servicio] = [];
       dest[servicio].push({ nombre, info, monto });
     }
   }
 
-  // ── Escribir en Women Payment 26 (Transferencias por Servicio) ──
+  // ── Women Payment 26 — tab por mes ──
   try {
     const ssExt = SpreadsheetApp.openById(SS_ID_WOMEN_PAYMENT);
-    const sh    = ssExt.getSheets()[0];
+    const sh    = _obtenerTabMes_(ssExt, mes, false);
+    const lastRow = sh.getLastRow();
+    const data    = lastRow > 1 ? sh.getRange(2, 1, lastRow - 1, 10).getValues() : [];
 
-    for (const [servicio, filas] of Object.entries(filasPorServicioTrans)) {
-      let totalServicio = 0;
+    for (const [servicio, filas] of Object.entries(filasTrans)) {
       for (const { nombre, info, monto } of filas) {
         if (monto <= 0) continue;
-        totalServicio += monto;
-        // Buscar fila existente del participante en este servicio para este mes
-        const tipoPago = "Pago Cuenta";
-        const lastRow  = sh.getLastRow();
-        const data     = lastRow > 0 ? sh.getRange(1, 1, lastRow, 10).getValues() : [];
         let found = false;
         for (let i = 0; i < data.length; i++) {
           if (String(data[i][0]).trim() === nombre && String(data[i][2]).trim() === servicio) {
-            sh.getRange(i + 1, colQ).setValue(monto);
-            sh.getRange(i + 1, 10).setValue((Number(data[i][7]) || 0) + (Number(data[i][8]) || 0) + (esQ1 ? monto : 0) + (esQ1 ? 0 : monto));
+            const fila = i + 2;
+            sh.getRange(fila, colQ).setValue(monto);
+            const q1 = Number(data[i][7]) || 0;
+            const q2 = Number(data[i][8]) || 0;
+            sh.getRange(fila, 10).setValue(esQ1 ? monto + q2 : q1 + monto);
             found = true;
             break;
           }
         }
         if (!found) {
-          const newRow = sh.getLastRow() + 1;
-          const rowData = [nombre, tipoPago, servicio, info.banco, info.tipoCuenta,
-                           String(info.numCuenta), info.cuentaPago,
-                           esQ1 ? monto : 0, esQ1 ? 0 : monto,
-                           monto];
-          sh.getRange(newRow, 1, 1, 10).setValues([rowData]);
-          sh.getRange(newRow, 6).setNumberFormat("@");
-          sh.getRange(newRow, 8, 1, 3).setNumberFormat(fmtQ);
+          const nr = sh.getLastRow() + 1;
+          sh.getRange(nr, 1, 1, 10).setValues([[
+            nombre, "Pago Cuenta", servicio, info.banco, info.tipoCuenta,
+            String(info.numCuenta), info.cuentaPago,
+            esQ1 ? monto : 0, esQ1 ? 0 : monto, monto
+          ]]);
+          sh.getRange(nr, 6).setNumberFormat("@");
+          sh.getRange(nr, 8, 1, 3).setNumberFormat('"Q "#,##0.00');
         }
       }
     }
@@ -2671,21 +2708,16 @@ function _enviarPagosExterno_(desglose, infoPart, ordenQ, mes) {
     throw new Error("Women Payment 26: " + e.message);
   }
 
-  // ── Escribir en Cheques externo ──
+  // ── Cheques externo — tab por mes ──
   try {
     const ssChq = SpreadsheetApp.openById(SS_ID_CHEQUES_EXT);
-    const shChq = ssChq.getSheets()[0];
-    // Asegurar encabezados
-    if (shChq.getLastRow() < 1) {
-      shChq.getRange(1, 1, 1, 10).setValues([[
-        "Nombre","Tipo de Pago","Servicio","Banco","Tipo de Cuenta","Numero de Cta","Cuenta de Pago","Quincena 1","Quincena 2","Total Mes"
-      ]]).setFontWeight("bold").setBackground("#263238").setFontColor("#ffffff");
-    }
-    for (const [servicio, filas] of Object.entries(filasPorServicioChq)) {
+    const shChq = _obtenerTabMes_(ssChq, mes, true);
+    const lastRow = shChq.getLastRow();
+    const data    = lastRow > 1 ? shChq.getRange(2, 1, lastRow - 1, 10).getValues() : [];
+
+    for (const [servicio, filas] of Object.entries(filasChq)) {
       for (const { nombre, info, monto } of filas) {
         if (monto <= 0) continue;
-        const lastRow = shChq.getLastRow();
-        const data    = lastRow > 1 ? shChq.getRange(2, 1, lastRow - 1, 10).getValues() : [];
         let found = false;
         for (let i = 0; i < data.length; i++) {
           if (String(data[i][0]).trim() === nombre && String(data[i][2]).trim() === servicio) {
@@ -2695,13 +2727,14 @@ function _enviarPagosExterno_(desglose, infoPart, ordenQ, mes) {
           }
         }
         if (!found) {
-          const newRow  = shChq.getLastRow() + 1;
-          const rowData = [nombre, "Cheque", servicio, info.banco, info.tipoCuenta,
-                           String(info.numCuenta), info.cuentaPago,
-                           esQ1 ? monto : 0, esQ1 ? 0 : monto, monto];
-          shChq.getRange(newRow, 1, 1, 10).setValues([rowData]);
-          shChq.getRange(newRow, 6).setNumberFormat("@");
-          shChq.getRange(newRow, 8, 1, 3).setNumberFormat(fmtQ);
+          const nr = shChq.getLastRow() + 1;
+          shChq.getRange(nr, 1, 1, 10).setValues([[
+            nombre, "Cheque", servicio, info.banco, info.tipoCuenta,
+            String(info.numCuenta), info.cuentaPago,
+            esQ1 ? monto : 0, esQ1 ? 0 : monto, monto
+          ]]);
+          shChq.getRange(nr, 6).setNumberFormat("@");
+          shChq.getRange(nr, 8, 1, 3).setNumberFormat('"Q "#,##0.00');
         }
       }
     }
@@ -3189,11 +3222,11 @@ function actualizarParticipacionProgramas() {
     const lastRow = cat.getLastRow();
     if (lastRow < 2) return ss.toast("No hay participantes.", null, 3);
 
-    // Insertar checkboxes en columnas I–L y N–O para filas que los necesiten
-    cat.getRange(2, 9,  lastRow - 1, 4).insertCheckboxes(); // I–L: programas
-    cat.getRange(2, 14, lastRow - 1, 2).insertCheckboxes(); // N–O: CCI, CUNDE
+    // Insertar checkboxes en columnas I–K (programas) y M–N (CCI, CUNDE)
+    cat.getRange(2, 9,  lastRow - 1, 3).insertCheckboxes(); // I–K: Educación, Inclusión, Apoyo
+    cat.getRange(2, 13, lastRow - 1, 2).insertCheckboxes(); // M–N: CCI, CUNDE
 
-    ss.toast("✅ Participación al día — programas en columnas I–L de Participantes Activos.", null, 4);
+    ss.toast("✅ Participación al día — programas en columnas I–K de Participantes Activos.", null, 4);
   } catch (e) {
     SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 3);
   }
