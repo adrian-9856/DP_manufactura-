@@ -86,6 +86,7 @@ function onOpen() {
       .addItem("🔄 Actualizar todo",                "actualizarTodo")
       .addSeparator()
       // — Sistema —
+      .addItem("⬆️ Aplicar actualizaciones",        "aplicarActualizaciones")
       .addItem("🚀 Instalar sistema",               "instalarSistema")
       .addItem("♻️ Reinstalar sistema",             "reinstalarSistema")
       .addItem("⛔ Desinstalar sistema",             "desinstalarSistema")
@@ -97,6 +98,74 @@ function onOpen() {
       .addToUi();
   } catch (e) {
     // Silenciosamente ignorar si getUi no está disponible
+  }
+}
+
+// ========================= APLICAR ACTUALIZACIONES SIN BORRAR DATOS =========================
+
+function aplicarActualizaciones() {
+  try {
+    const ss  = SpreadsheetApp.getActive();
+    const ui  = SpreadsheetApp.getUi();
+    const log = [];
+
+    // 1. Participantes Activos — agregar columna P "Cuenta de Pago" si no existe
+    const cat = ss.getSheetByName(SHEET_CATALOGOS);
+    if (cat) {
+      const headers = cat.getRange(1, 1, 1, cat.getLastColumn()).getValues()[0];
+      const yaExiste = headers.some(h => String(h).toLowerCase().includes("cuenta de pago"));
+      if (!yaExiste) {
+        const colP = 16; // columna P
+        cat.getRange(1, colP)
+          .setValue("Cuenta de Pago")
+          .setBackground("#e65100").setFontColor("#ffffff")
+          .setFontWeight("bold").setHorizontalAlignment("center");
+        cat.setColumnWidth(colP, 120);
+        cat.getRange(2, colP, 999)
+          .setBackground("#fff3e0")
+          .setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID)
+          .setDataValidation(
+            SpreadsheetApp.newDataValidation()
+              .requireValueInList(["Creamos", "mi-eelo"])
+              .setAllowInvalid(false).build()
+          );
+        log.push("✅ Columna 'Cuenta de Pago' agregada en Participantes Activos (columna P)");
+      } else {
+        log.push("☑️ Columna 'Cuenta de Pago' ya existía");
+      }
+    }
+
+    // 2. Recepciones — reaplica formato Q a columnas monetarias
+    const shRec = ss.getSheetByName(SHEET_RECEPCIONES);
+    if (shRec && shRec.getLastRow() >= DATA_START_ROW) {
+      const m = _headerMap_(shRec);
+      const firstCol = m["precio unit. (q)"] || m["total q"];
+      if (firstCol) {
+        const nRows = shRec.getLastRow() - DATA_START_ROW + 1;
+        shRec.getRange(DATA_START_ROW, firstCol, nRows, 4).setNumberFormat('"Q "#,##0.00');
+      }
+      log.push("✅ Formato Q restaurado en Recepciones");
+    }
+
+    // 3. Cheques / Transferencias — reaplica formato Q en cols G-I
+    [SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_HISTORIAL_PAGOS].forEach(nombre => {
+      const sh = ss.getSheetByName(nombre);
+      if (!sh || sh.getLastRow() < 3) return;
+      sh.getRange(3, 7, sh.getLastRow() - 2, 3).setNumberFormat('"Q "#,##0.00');
+      log.push("✅ Formato Q restaurado en " + nombre);
+    });
+
+    // 4. Recalcular todo
+    actualizarTodo();
+    log.push("✅ Cálculos y colores actualizados");
+
+    ui.alert(
+      "✅ Actualizaciones aplicadas",
+      log.join("\n"),
+      ui.ButtonSet.OK
+    );
+  } catch (e) {
+    SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 4);
   }
 }
 
