@@ -70,33 +70,229 @@ function onOpen() {
     // Menú principal del sistema
     ui.createMenu("⚙️ Manufactura")
       // — Operaciones diarias —
-      .addItem("✏️ Editar fila seleccionada",    "editarFilaSeleccionada")
-      .addItem("✅ Marcar fila como pagada",      "marcarFilaPagada")
+      .addItem("✏️ Editar fila seleccionada",       "editarFilaSeleccionada")
+      .addItem("✅ Marcar fila como pagada",         "marcarFilaPagada")
+      .addItem("🔍 Historial de participante",       "buscarHistorialParticipante")
       .addSeparator()
       // — Quincenas —
-      .addItem("🗓️ Crear quincena inicial",      "crearQuincenaInicial")
-      .addItem("📅 Cerrar quincena actual",      "cerrarQuincenaActual")
-      .addItem("🗃️ Cerrar mes manualmente",      "cerrarMes")
+      .addItem("🗓️ Crear quincena inicial",         "crearQuincenaInicial")
+      .addItem("📅 Cerrar quincena actual",         "cerrarQuincenaActual")
+      .addItem("🗃️ Cerrar mes manualmente",         "cerrarMes")
       .addSeparator()
       // — Mantenimiento —
-      .addItem("🔢 Reparar montos y totales",    "repararRedondeoMontos")
-      .addItem("🧹 Limpiar datos de prueba",     "limpiarDatosPrueba")
-      .addItem("📋 Actualizar participación",    "actualizarParticipacionProgramas")
-      .addItem("🔄 Actualizar todo",             "actualizarTodo")
+      .addItem("🔢 Reparar montos y totales",       "repararRedondeoMontos")
+      .addItem("🧹 Limpiar datos de prueba",        "limpiarDatosPrueba")
+      .addItem("📋 Actualizar participación",       "actualizarParticipacionProgramas")
+      .addItem("🔄 Actualizar todo",                "actualizarTodo")
       .addSeparator()
       // — Sistema —
-      .addItem("🚀 Instalar sistema",            "instalarSistema")
-      .addItem("♻️ Reinstalar sistema",          "reinstalarSistema")
-      .addItem("⛔ Desinstalar sistema",          "desinstalarSistema")
+      .addItem("🚀 Instalar sistema",               "instalarSistema")
+      .addItem("♻️ Reinstalar sistema",             "reinstalarSistema")
+      .addItem("⛔ Desinstalar sistema",             "desinstalarSistema")
       .addSeparator()
       // — Triggers —
-      .addItem("⏱️ Instalar triggers",           "crearTriggers")
-      .addItem("👤 Trigger inactivos",           "instalarTriggerInactivos")
-      .addItem("⏹️ Eliminar triggers",           "eliminarTriggers")
+      .addItem("⏱️ Instalar triggers",              "crearTriggers")
+      .addItem("👤 Trigger inactivos",              "instalarTriggerInactivos")
+      .addItem("⏹️ Eliminar triggers",              "eliminarTriggers")
       .addToUi();
   } catch (e) {
     // Silenciosamente ignorar si getUi no está disponible
   }
+}
+
+// ========================= HISTORIAL POR PARTICIPANTE =========================
+
+// Busca todas las entregas y pagos de un participante y genera una hoja de resumen
+function buscarHistorialParticipante() {
+  try {
+    const ss  = SpreadsheetApp.getActive();
+    const ui  = SpreadsheetApp.getUi();
+
+    // Pedir nombre del participante
+    const resp = ui.prompt(
+      "🔍 Historial de participante",
+      "Escribe el nombre (o parte del nombre) del participante:",
+      ui.ButtonSet.OK_CANCEL
+    );
+    if (resp.getSelectedButton() !== ui.Button.OK) return;
+    const busqueda = resp.getResponseText().trim().toLowerCase();
+    if (!busqueda) return;
+
+    // Buscar coincidencias en Participantes Activos
+    const cat     = ss.getSheetByName(SHEET_CATALOGOS);
+    const dataCat = cat ? cat.getDataRange().getValues().slice(1) : [];
+    const coincidencias = dataCat.filter(r =>
+      String(r[CAT_COL.NOMBRE] || "").toLowerCase().includes(busqueda)
+    );
+
+    if (coincidencias.length === 0) {
+      return ui.alert("Sin resultados", "No se encontró ningún participante con ese nombre.", ui.ButtonSet.OK);
+    }
+
+    // Si hay varias, preguntar cuál
+    let infoParticipante;
+    if (coincidencias.length === 1) {
+      infoParticipante = coincidencias[0];
+    } else {
+      const lista = coincidencias.map((r, i) => (i + 1) + ". " + r[CAT_COL.NOMBRE]).join("\n");
+      const sel = ui.prompt(
+        "Varias coincidencias",
+        "Se encontraron " + coincidencias.length + " participantes:\n\n" + lista + "\n\nEscribe el número:",
+        ui.ButtonSet.OK_CANCEL
+      );
+      if (sel.getSelectedButton() !== ui.Button.OK) return;
+      const idx = parseInt(sel.getResponseText().trim()) - 1;
+      if (isNaN(idx) || idx < 0 || idx >= coincidencias.length) return ui.alert("❌ Número no válido.");
+      infoParticipante = coincidencias[idx];
+    }
+
+    const nombreBuscado = String(infoParticipante[CAT_COL.NOMBRE] || "").trim();
+    _generarHojaHistorial_(ss, nombreBuscado, infoParticipante);
+
+  } catch (e) {
+    SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 4);
+  }
+}
+
+function _generarHojaHistorial_(ss, nombre, infoRow) {
+  const NOMBRE_HOJA = "Historial_Participante";
+  const fmtQ = '"Q "#,##0.00';
+  const tz   = Session.getScriptTimeZone();
+
+  // Crear o reemplazar la hoja
+  let sh = ss.getSheetByName(NOMBRE_HOJA);
+  if (sh) {
+    sh.clear();
+    sh.clearFormats();
+  } else {
+    sh = ss.insertSheet(NOMBRE_HOJA);
+  }
+  ss.setActiveSheet(sh);
+
+  // ── Encabezado principal ──
+  sh.getRange("A1:H1").merge()
+    .setValue("📋 HISTORIAL DE PAGOS — " + nombre.toUpperCase())
+    .setFontWeight("bold").setFontSize(13)
+    .setBackground("#263238").setFontColor("#ffffff")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.setRowHeight(1, 32);
+
+  // ── Datos del participante ──
+  const cuentaPago = String(infoRow[CAT_COL.CUENTA_PAGO] || "—").trim();
+  const banco      = String(infoRow[CAT_COL.BANCO]       || "—").trim();
+  const tipoCta    = String(infoRow[CAT_COL.TIPO_CUENTA]  || "—").trim();
+  const numCta     = String(infoRow[CAT_COL.NUM_CUENTA]   || "—").trim();
+  const cid        = String(infoRow[CAT_COL.ID]           || "—").trim();
+
+  sh.getRange("A2:H2").setValues([[
+    "Creamos ID: " + cid,
+    "Banco: " + banco,
+    "Tipo cta: " + tipoCta,
+    "Nº Cuenta: " + numCta,
+    "Cuenta de Pago: " + cuentaPago,
+    "", "", ""
+  ]]).setBackground("#eceff1").setFontColor("#37474f").setFontSize(10);
+  sh.getRange("A2:H2").merge();
+  sh.getRange("A2").setValue(
+    "Creamos ID: " + cid + "   |   Banco: " + banco + "   |   Tipo: " + tipoCta +
+    "   |   Nº Cuenta: " + numCta + "   |   Cuenta de Pago: " + cuentaPago
+  );
+
+  // ── Encabezados tabla de entregas ──
+  const hdrsEntregas = ["Fecha", "Quincena", "Proyecto / Servicio", "Producto",
+                        "Unidades buenas", "Total Q", "Impuesto PC", "Total a Pagar"];
+  sh.getRange(3, 1, 1, hdrsEntregas.length).setValues([hdrsEntregas])
+    .setFontWeight("bold").setBackground("#37474f").setFontColor("#ffffff")
+    .setHorizontalAlignment("center");
+  sh.setRowHeight(3, 24);
+
+  // ── Leer Recepciones y filtrar por participante ──
+  const shRec = ss.getSheetByName(SHEET_RECEPCIONES);
+  let filaActual = 4;
+  let totalGeneral = 0;
+
+  if (shRec && shRec.getLastRow() >= DATA_START_ROW) {
+    const m       = _headerMap_(shRec);
+    const dataRec = shRec.getRange(DATA_START_ROW, 1, shRec.getLastRow() - DATA_START_ROW + 1, shRec.getLastColumn()).getValues();
+    const colFecha = m["fecha entrega"] ? m["fecha entrega"] - 1 : 1;
+    const colQ     = m["quincena"]      ? m["quincena"] - 1      : 2;
+    const colProy  = m["proyecto / cliente"] ? m["proyecto / cliente"] - 1 : 5;
+    const colProd  = m["producto"]      ? m["producto"] - 1      : 6;
+    const colUB    = m["unidades buenas"]? m["unidades buenas"] - 1 : 7;
+    const colTQ    = m["total q"]       ? m["total q"] - 1       : 10;
+    const colImp   = (m["impuesto pc (5%)"] || m["impuesto pc"]) ? (m["impuesto pc (5%)"] || m["impuesto pc"]) - 1 : 11;
+    const colTAP   = m["total a pagar"] ? m["total a pagar"] - 1 : 12;
+
+    const filas = dataRec.filter(r => String(r[m["participante"] - 1] || "").trim() === nombre);
+
+    filas.forEach(r => {
+      const fecha = r[colFecha] instanceof Date
+        ? Utilities.formatDate(r[colFecha], tz, "dd/MM/yyyy")
+        : String(r[colFecha] || "");
+      const tap   = Math.round(Number(r[colTAP]) || 0);
+      totalGeneral += tap;
+      sh.getRange(filaActual, 1, 1, 8).setValues([[
+        fecha,
+        String(r[colQ]   || ""),
+        String(r[colProy] || ""),
+        String(r[colProd] || ""),
+        Number(r[colUB]  || 0),
+        Number(r[colTQ]  || 0),
+        Number(r[colImp] || 0),
+        tap
+      ]]);
+      sh.getRange(filaActual, 6, 1, 3).setNumberFormat(fmtQ);
+      sh.getRange(filaActual, 1, 1, 8).setBackground(filaActual % 2 === 0 ? "#f5f5f5" : "#ffffff");
+      filaActual++;
+    });
+
+    if (filas.length === 0) {
+      sh.getRange(filaActual, 1).setValue("Sin entregas registradas para este participante.");
+      filaActual++;
+    }
+  }
+
+  // ── Subtotal entregas ──
+  filaActual++;
+  sh.getRange(filaActual, 6, 1, 2).setValues([["TOTAL ENTREGAS", totalGeneral]])
+    .setFontWeight("bold").setBackground("#cfd8dc");
+  sh.getRange(filaActual, 7).setNumberFormat(fmtQ);
+  filaActual += 2;
+
+  // ── Encabezados tabla de pagos realizados ──
+  const hdrsPagos = ["Mes", "Quincena 1", "Quincena 2", "Total Mes", "Fuente"];
+  sh.getRange(filaActual, 1, 1, hdrsPagos.length).setValues([hdrsPagos])
+    .setFontWeight("bold").setBackground("#1b5e20").setFontColor("#ffffff")
+    .setHorizontalAlignment("center");
+  filaActual++;
+
+  // ── Leer Cheques + Transferencias + Historial_Pagos ──
+  [SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_HISTORIAL_PAGOS].forEach(sheetName => {
+    const shP = ss.getSheetByName(sheetName);
+    if (!shP || shP.getLastRow() < 3) return;
+    const data = shP.getRange(3, 1, shP.getLastRow() - 2, 11).getValues();
+    data.forEach(r => {
+      if (String(r[0] || "").trim() !== nombre) return;
+      sh.getRange(filaActual, 1, 1, 5).setValues([[
+        String(r[9] || ""),     // Mes
+        Number(r[6] || 0),      // Q1
+        Number(r[7] || 0),      // Q2
+        Number(r[8] || 0),      // Total
+        sheetName               // Fuente
+      ]]);
+      sh.getRange(filaActual, 2, 1, 3).setNumberFormat(fmtQ);
+      sh.getRange(filaActual, 1, 1, 5).setBackground(filaActual % 2 === 0 ? "#e8f5e9" : "#f1f8e9");
+      filaActual++;
+    });
+  });
+
+  // ── Formato columnas ──
+  sh.setColumnWidth(1, 100); sh.setColumnWidth(2, 170); sh.setColumnWidth(3, 160);
+  sh.setColumnWidth(4, 130); sh.setColumnWidth(5,  90); sh.setColumnWidth(6,  90);
+  sh.setColumnWidth(7,  90); sh.setColumnWidth(8,  110);
+  sh.setFrozenRows(3);
+
+  ss.toast("✅ Historial de " + nombre + " generado en hoja '" + NOMBRE_HOJA + "'.", null, 5);
 }
 
 // ========================= MIGRACIÓN DE DATOS EXISTENTES =========================
