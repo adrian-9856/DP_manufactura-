@@ -2896,17 +2896,23 @@ function _obtenerTabMes_(ssExt, mes, esCheque) {
 function _enviarPagosExterno_(desglose, infoPart, ordenQ, mes) {
   const esQ1 = ordenQ === "Q1";
 
-  // Separar participantes por destino (Cheque vs Transferencia) y por Servicio
-  const filasTrans = {};   // { servicio: [{nombre, info, monto}] }
-  const filasChq   = {};
+  // Todos van a Women Payment 26 (finanzas lleva el control completo)
+  // Solo los de cheque van ADEMÁS a Cheques externo (administración emite el cheque)
+  const filasTrans = {};   // { servicio: [{nombre, info, monto}] } — TODOS
+  const filasChq   = {};   // { servicio: [{nombre, info, monto}] } — solo Cheque
 
   for (const [nombre, servicios] of Object.entries(desglose)) {
     const info  = infoPart[nombre] || {};
     const esChq = (info.tipoCuenta || "").toLowerCase() === "cheque";
-    const dest  = esChq ? filasChq : filasTrans;
     for (const [servicio, monto] of Object.entries(servicios)) {
-      if (!dest[servicio]) dest[servicio] = [];
-      dest[servicio].push({ nombre, info, monto });
+      // Todos → Women Payment 26
+      if (!filasTrans[servicio]) filasTrans[servicio] = [];
+      filasTrans[servicio].push({ nombre, info, monto });
+      // Cheques → también Cheques externo
+      if (esChq) {
+        if (!filasChq[servicio]) filasChq[servicio] = [];
+        filasChq[servicio].push({ nombre, info, monto });
+      }
     }
   }
 
