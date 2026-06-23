@@ -26,6 +26,7 @@ const SHEET_CATALOGO_PROD  = "Catálogo_Productos";
 // ── Google Sheets externos ─────────────────────────────────────────────────────
 const SS_ID_WOMEN_PAYMENT  = "1e3zlQQ827h_uXGE-0GryvpPs7r7kki0c6wcmc_jzIHk"; // Women Payment 26 (Transferencias)
 const SS_ID_CHEQUES_EXT    = "14yNGv0ce8heGSeJ5L4EnUQFryJfF1n3NeTT3FUky02M"; // Cheques externo
+const SHEET_REF_CREAMOS    = "Copy of Copy of CREAMOS ID nuevo"; // Hoja oculta de referencia
 
 const HEADER_ROW     = 4;
 const DATA_START_ROW = 5;
@@ -49,13 +50,17 @@ const CAT_COL = {
   BANCO:          5,  // F – Banco
   TITULAR:        6,  // G – Titular
   DPI:            7,  // H – DPI
-  EDUCACION:      8,  // I – Educación (checkbox)
-  INCLUSION_LAB:  9,  // J – Inclusión Laboral (checkbox)
-  APOYO_EMOC:    10,  // K – Apoyo Emocional (checkbox)
-  HIJOS:         11,  // L – N° Hijos
-  CCI:           12,  // M – CCI (checkbox)
-  CUNDE:         13,  // N – CUNDE (checkbox)
-  CUENTA_PAGO:   14,  // O – Cuenta de Pago (Creamos / mi-eelo)
+  EDAD:           8,  // I – Edad ← NUEVO
+  FECHA_NAC:      9,  // J – Fecha de Nacimiento ← NUEVO
+  GENERO:        10,  // K – Género ← NUEVO
+  AÑO_CREAMOS:   11,  // L – Año que entró Creamos ← NUEVO
+  EDUCACION:     12,  // M – Educación (checkbox)
+  INCLUSION_LAB: 13,  // N – Inclusión Laboral (checkbox)
+  APOYO_EMOC:    14,  // O – Apoyo Emocional (checkbox)
+  HIJOS:         15,  // P – N° Hijos
+  CCI:           16,  // Q – CCI (checkbox)
+  CUNDE:         17,  // R – CUNDE (checkbox)
+  CUENTA_PAGO:   18,  // S – Cuenta de Pago
 };
 
 // ========================= MENU =========================
@@ -74,6 +79,7 @@ function onOpen() {
       .addItem("✏️ Editar fila seleccionada",       "editarFilaSeleccionada")
       .addItem("✅ Marcar fila como pagada",         "marcarFilaPagada")
       .addItem("🔍 Historial de participante",       "buscarHistorialParticipante")
+      .addItem("🔄 Autocompletar desde referencia", "autocompletarDesdeReferencia")
       .addSeparator()
       // — Quincenas —
       .addItem("🗓️ Crear quincena inicial",         "crearQuincenaInicial")
@@ -151,6 +157,44 @@ function aplicarActualizaciones() {
       }
     }
 
+    // 1b. Participantes Activos — insertar columnas personales (Edad, Fecha Nac, Género, Año Creamos) después de DPI
+    if (cat) {
+      const hdrRow = cat.getRange(1, 1, 1, Math.max(cat.getLastColumn(), 20)).getValues()[0];
+      const tieneEdad = hdrRow.some(h => String(h).toLowerCase().includes("edad"));
+      if (!tieneEdad) {
+        // Insertar 4 columnas después de col H (DPI = pos 8)
+        cat.insertColumnsAfter(8, 4);
+        // Encabezados
+        cat.getRange("I1:L1").setValues([["Edad", "Fecha de Nacimiento", "Género", "Año que entró Creamos"]])
+          .setBackground("#00695c").setFontColor("#ffffff").setFontWeight("bold")
+          .setHorizontalAlignment("center").setVerticalAlignment("middle");
+        // Formato y estilos
+        cat.getRange("I2:L1000").setBackground("#e0f2f1").setFontColor("#212121");
+        cat.getRange("I2:L1000").setBorder(true, true, true, true, false, false, "#b2dfdb", SpreadsheetApp.BorderStyle.SOLID);
+        cat.getRange("J2:J1000").setNumberFormat("dd/MM/yyyy");
+        cat.setColumnWidth(9, 60); cat.setColumnWidth(10, 130);
+        cat.setColumnWidth(11, 90); cat.setColumnWidth(12, 140);
+        // Dropdown Género
+        cat.getRange("K2:K1000").setDataValidation(
+          SpreadsheetApp.newDataValidation()
+            .requireValueInList(["Mujer", "Hombre", "No binario", "Prefiero no decir"])
+            .setAllowInvalid(true).build()
+        );
+        // Actualizar dropdown Cuenta de Pago a col S (ahora hay 4 cols más)
+        cat.getRange("S2:S1000")
+          .setBackground("#fff3e0").setFontColor("#212121")
+          .setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID)
+          .setDataValidation(
+            SpreadsheetApp.newDataValidation()
+              .requireValueInList(["Creamos", "mi-eelo"])
+              .setAllowInvalid(false).build()
+          );
+        log.push("✅ Columnas personales insertadas en Participantes Activos (I-L: Edad, Fecha Nac, Género, Año Creamos)");
+      } else {
+        log.push("☑️ Columnas personales ya existen en Participantes Activos");
+      }
+    }
+
     // 2. Recepciones — insertar columna Categoría si no existe, reaplica formato Q
     const shRec = ss.getSheetByName(SHEET_RECEPCIONES);
     if (shRec) {
@@ -214,6 +258,113 @@ function aplicarActualizaciones() {
     );
   } catch (e) {
     SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 4);
+  }
+}
+
+// ========================= AUTOCOMPLETAR DESDE REFERENCIA =========================
+// Llena Edad, Fecha Nac, Género, Año Creamos, DPI usando la hoja oculta de referencia
+function autocompletarDesdeReferencia() {
+  try {
+    const ss  = SpreadsheetApp.getActive();
+    const cat = ss.getSheetByName(SHEET_CATALOGOS);
+    const ref = ss.getSheetByName(SHEET_REF_CREAMOS);
+    const ui  = SpreadsheetApp.getUi();
+
+    if (!cat) return ui.alert("❌ No se encontró la hoja Participantes Activos.");
+    if (!ref) return ui.alert("❌ No se encontró la hoja de referencia '" + SHEET_REF_CREAMOS + "'.\nVerifica que el nombre sea exacto.");
+
+    // Ocultar hoja de referencia si está visible
+    if (!ref.isSheetHidden()) ref.hideSheet();
+
+    // Leer referencia: A=Nombre, B=CreamosID, C=Año, D=Edad, E=Género, F=FechaNac, G=DPI
+    const dataRef = ref.getLastRow() > 1
+      ? ref.getRange(2, 1, ref.getLastRow() - 1, 7).getValues()
+      : [];
+
+    // Índices en la hoja de referencia (0-based)
+    const REF = { NOMBRE:0, CID:1, AÑO:2, EDAD:3, GENERO:4, FECHA:5, DPI:6 };
+
+    // Construir mapas de búsqueda desde referencia
+    const porCID  = {};  // creamosId → fila ref
+    const porDPI  = {};  // dpi → fila ref
+    dataRef.forEach(r => {
+      const cid = String(r[REF.CID] || "").trim();
+      const dpi = String(r[REF.DPI] || "").trim();
+      if (cid) porCID[cid.toLowerCase()]  = r;
+      if (dpi) porDPI[dpi]                = r;
+    });
+
+    // Leer participantes activos
+    if (cat.getLastRow() < 2) return ui.alert("Sin participantes en la hoja.");
+    const dataCat = cat.getRange(2, 1, cat.getLastRow() - 1, Math.max(cat.getLastColumn(), 19)).getValues();
+
+    let actualizados = 0;
+    let sinCID = [];
+    let noEncontrados = [];
+
+    dataCat.forEach((row, i) => {
+      const fila   = i + 2; // 1-based row in sheet
+      const nombre = String(row[CAT_COL.NOMBRE] || "").trim();
+      let   cid    = String(row[CAT_COL.ID]      || "").trim();
+      const dpiAct = String(row[CAT_COL.DPI]     || "").trim();
+
+      if (!nombre) return;
+
+      let refRow = null;
+
+      if (cid) {
+        refRow = porCID[cid.toLowerCase()] || null;
+      }
+      // Si no tiene CID pero sí DPI, buscar por DPI
+      if (!refRow && dpiAct) {
+        refRow = porDPI[dpiAct] || null;
+        if (refRow && !cid) {
+          // Completar CID encontrado
+          cid = String(refRow[REF.CID] || "").trim();
+          if (cid) cat.getRange(fila, CAT_COL.ID + 1).setValue(cid);
+        }
+      }
+
+      if (!cid && !refRow) {
+        sinCID.push(nombre);
+        return;
+      }
+
+      if (!refRow) {
+        noEncontrados.push(nombre + " (ID: " + cid + ")");
+        return;
+      }
+
+      // Completar columnas I-L (indices 8-11 en CAT_COL)
+      const edadRef   = refRow[REF.EDAD];
+      const fechaRef  = refRow[REF.FECHA];
+      const generoRef = String(refRow[REF.GENERO] || "").trim();
+      const añoRef    = refRow[REF.AÑO];
+      const dpiRef    = String(refRow[REF.DPI]    || "").trim();
+
+      // Solo escribir si la celda está vacía
+      if (!row[CAT_COL.EDAD]      && edadRef)   cat.getRange(fila, CAT_COL.EDAD      + 1).setValue(edadRef);
+      if (!row[CAT_COL.FECHA_NAC] && fechaRef) {
+        cat.getRange(fila, CAT_COL.FECHA_NAC + 1).setValue(fechaRef).setNumberFormat("dd/MM/yyyy");
+      }
+      if (!row[CAT_COL.GENERO]    && generoRef)  cat.getRange(fila, CAT_COL.GENERO    + 1).setValue(generoRef);
+      if (!row[CAT_COL.AÑO_CREAMOS] && añoRef)   cat.getRange(fila, CAT_COL.AÑO_CREAMOS + 1).setValue(añoRef);
+      if (!row[CAT_COL.DPI]       && dpiRef)     cat.getRange(fila, CAT_COL.DPI       + 1).setValue(dpiRef);
+
+      actualizados++;
+    });
+
+    let msg = "✅ " + actualizados + " participante(s) completados con datos de referencia.\n";
+    if (noEncontrados.length) {
+      msg += "\n⚠️ Creamos ID no encontrado en referencia (" + noEncontrados.length + "):\n" + noEncontrados.join("\n");
+    }
+    if (sinCID.length) {
+      msg += "\n\n🔴 SIN Creamos ID — Crear perfil en Salesforce y verificar (" + sinCID.length + "):\n" + sinCID.join("\n");
+    }
+
+    ui.alert("📋 Autocompletar desde referencia", msg, ui.ButtonSet.OK);
+  } catch (e) {
+    SpreadsheetApp.getActive().toast("❌ Error: " + e.message, null, 5);
   }
 }
 
@@ -1051,47 +1202,53 @@ function _setupCatalogos_(sh) {
     .setBackground("#263238").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
-  // I–K: programas sociales
-  sh.getRange("I1:K1").setValues([["Educación", "Inclusión Laboral", "Apoyo Emocional"]])
+  // I–L: datos personales adicionales (teal)
+  sh.getRange("I1:L1").setValues([["Edad", "Fecha de Nacimiento", "Género", "Año que entró Creamos"]])
+    .setBackground("#00695c").setFontColor("#ffffff").setFontWeight("bold")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+
+  // M–O: programas sociales
+  sh.getRange("M1:O1").setValues([["Educación", "Inclusión Laboral", "Apoyo Emocional"]])
     .setBackground("#2e7d32").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
-  // L–N: datos sociales
-  sh.getRange("L1").setValue("N° Hijos")
+  // P–R: datos sociales
+  sh.getRange("P1").setValue("N° Hijos")
     .setBackground("#4a148c").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
-  sh.getRange("M1:N1").setValues([["CCI", "CUNDE"]])
+  sh.getRange("Q1:R1").setValues([["CCI", "CUNDE"]])
     .setBackground("#4a148c").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
-  // O: fuente de pago
-  sh.getRange("O1").setValue("Cuenta de Pago")
+  // S: fuente de pago
+  sh.getRange("S1").setValue("Cuenta de Pago")
     .setBackground("#e65100").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
 
   sh.setFrozenRows(1);
   sh.setRowHeight(1, 28);
 
-  sh.setColumnWidth(1,  100); sh.setColumnWidth(2,  180); sh.setColumnWidth(3,  100);
-  sh.setColumnWidth(4,  130); sh.setColumnWidth(5,  130); sh.setColumnWidth(6,  120);
-  sh.setColumnWidth(7,  150); sh.setColumnWidth(8,  110);
-  sh.setColumnWidth(9,   90); sh.setColumnWidth(10, 140); sh.setColumnWidth(11, 140);
-  sh.setColumnWidth(12,  80); sh.setColumnWidth(13,  60); sh.setColumnWidth(14,  70);
-  sh.setColumnWidth(15, 120);
+  [100,180,100,130,130,120,150,110, 60,130,90,140, 90,140,140, 80,60,70,120]
+    .forEach((w, i) => sh.setColumnWidth(i + 1, w));
 
   sh.getRange("A2:H1000").setBackground("#ffffff").setFontColor("#212121");
   sh.getRange("A2:H1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
-  sh.getRange("I2:K1000").insertCheckboxes();
-  sh.getRange("I2:K1000").setBackground("#f1f8e9");
-  sh.getRange("I2:K1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  // I–L: datos personales adicionales
+  sh.getRange("I2:L1000").setBackground("#e0f2f1").setFontColor("#212121");
+  sh.getRange("I2:L1000").setBorder(true, true, true, true, false, false, "#b2dfdb", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("J2:J1000").setNumberFormat("dd/MM/yyyy");
 
-  sh.getRange("L2:L1000").setBackground("#fce4ec").setFontColor("#212121");
-  sh.getRange("L2:L1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("M2:O1000").insertCheckboxes();
+  sh.getRange("M2:O1000").setBackground("#f1f8e9");
+  sh.getRange("M2:O1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
-  sh.getRange("M2:N1000").insertCheckboxes();
-  sh.getRange("M2:N1000").setBackground("#fce4ec");
-  sh.getRange("M2:N1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("P2:P1000").setBackground("#fce4ec").setFontColor("#212121");
+  sh.getRange("P2:P1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+
+  sh.getRange("Q2:R1000").insertCheckboxes();
+  sh.getRange("Q2:R1000").setBackground("#fce4ec");
+  sh.getRange("Q2:R1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
   sh.getRange("C2:C1000").setDataValidation(
     SpreadsheetApp.newDataValidation()
@@ -1103,9 +1260,14 @@ function _setupCatalogos_(sh) {
       .requireValueInList(["Monetaria", "Ahorro", "Corriente"])
       .setAllowInvalid(true).build()
   );
+  sh.getRange("K2:K1000").setDataValidation(
+    SpreadsheetApp.newDataValidation()
+      .requireValueInList(["Mujer", "Hombre", "No binario", "Prefiero no decir"])
+      .setAllowInvalid(true).build()
+  );
 
-  // O: Cuenta de Pago dropdown
-  sh.getRange("O2:O1000")
+  // S: Cuenta de Pago dropdown
+  sh.getRange("S2:S1000")
     .setBackground("#fff3e0").setFontColor("#212121")
     .setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID)
     .setDataValidation(
