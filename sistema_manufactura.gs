@@ -37,7 +37,7 @@ const RECEPCIONES_HEADERS = [
   "Impuesto PC (5%)", "Total a Pagar", "Estado pago"
 ];
 
-const CAT_OPCIONES = ["Bisuteria","Servicios","Costura","Pulsera Project","Niñera","Brackish"];
+const CAT_OPCIONES = ["Pulsera Project","Brackish","Bisuteria","Servicios"];
 
 // Columnas del catálogo de participantes (0-indexed)
 const CAT_COL = {
@@ -192,20 +192,15 @@ function aplicarActualizaciones() {
       log.push("✅ Formato Q restaurado en " + nombre);
     });
 
-    // 4. Catálogo_Productos — agregar dropdown en Categoría (col A) si no existe
+    // 4. Catálogo_Productos — asegurar dropdown en col A (Women Payment 26') y checkboxes en col E
     const shCat = ss.getSheetByName(SHEET_CATALOGO_PROD);
     if (shCat) {
-      const catRule = shCat.getRange("A2").getDataValidation();
-      if (!catRule) {
-        shCat.getRange("A2:A1000").setDataValidation(
-          SpreadsheetApp.newDataValidation()
-            .requireValueInList(CAT_OPCIONES)
-            .setAllowInvalid(true).build()
-        );
-        log.push("✅ Dropdown de Categoría agregado en Catálogo_Productos (col A)");
-      } else {
-        log.push("☑️ Dropdown de Categoría ya existía en Catálogo_Productos");
-      }
+      shCat.getRange("A2:A1000").setDataValidation(
+        SpreadsheetApp.newDataValidation()
+          .requireValueInList(CAT_OPCIONES)
+          .setAllowInvalid(true).build()
+      );
+      log.push("✅ Dropdown Women Payment 26' actualizado en Catálogo_Productos (col A)");
     }
 
     // 5. Recalcular todo
@@ -1361,26 +1356,29 @@ function _setupCatalogo_(sh) {
   sh.clear();
   sh.clearFormats();
 
-  // Col A = Categoría, B = Diseño/Producto, C = Precio, D = Notas
-  sh.getRange("A1:D1").setValues([["Categoría", "Diseño / Producto", "Precio (Q)", "Notas"]])
+  // Col A = Women Payment 26' (servicio), B = Categoría, C = Diseño/Producto, D = Precio, E = Notas
+  sh.getRange("A1:E1").setValues([["Women Payment 26'", "Categoría", "Diseño / Producto", "Precio (Q)", "Notas"]])
     .setBackground("#1565c0").setFontColor("#ffffff").setFontWeight("bold")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
   sh.setFrozenRows(1);
   sh.setRowHeight(1, 25);
 
-  sh.setColumnWidth(1, 130); sh.setColumnWidth(2, 220);
-  sh.setColumnWidth(3, 110); sh.setColumnWidth(4, 260);
+  sh.setColumnWidth(1, 140); sh.setColumnWidth(2, 120);
+  sh.setColumnWidth(3, 220); sh.setColumnWidth(4, 110); sh.setColumnWidth(5, 80);
 
-  sh.getRange("C2:C1000").setNumberFormat('"Q " #,##0.00');
-  sh.getRange("A2:D1000").setBackground("#ffffff").setFontColor("#212121");
-  sh.getRange("A2:D1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
+  sh.getRange("D2:D1000").setNumberFormat('"Q " #,##0.00');
+  sh.getRange("A2:E1000").setBackground("#ffffff").setFontColor("#212121");
+  sh.getRange("A2:E1000").setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
 
-  // Dropdown para Categoría (col A)
+  // Dropdown en col A (Women Payment 26' / servicio)
   sh.getRange("A2:A1000").setDataValidation(
     SpreadsheetApp.newDataValidation()
       .requireValueInList(CAT_OPCIONES)
       .setAllowInvalid(true).build()
   );
+
+  // Checkboxes en col E (Notas / activo)
+  sh.getRange("E2:E1000").insertCheckboxes();
 }
 
 // ── Archivo de Recepciones (quincenas cerradas) ───────────────────────────────
@@ -1421,19 +1419,18 @@ function agregarEntregaRapida() {
         if (nombre && etapa === "Inscritx") participantesData.push({ nombre, id });
       }
     }
-    const proyectos     = _obtenerHistorico_("proyectos");
     const metodos       = _obtenerHistorico_("metodos");
 
-    // Leer productos, precios y categorías del Catálogo_Productos
-    // Col A = Categoría, Col B = Diseño/Producto, Col C = Precio
+    // Leer productos del Catálogo_Productos
+    // Col A = Women Payment 26' (servicio/categoría), Col C = Diseño/Producto, Col D = Precio
     const productosConPrecio = [];
     const catProd = ss.getSheetByName(SHEET_CATALOGO_PROD);
     if (catProd && catProd.getLastRow() > 1) {
-      catProd.getRange(2, 1, catProd.getLastRow() - 1, 3).getValues().forEach(r => {
-        const categoria = String(r[0] || "").trim();
-        const prod      = String(r[1] || "").trim();
+      catProd.getRange(2, 1, catProd.getLastRow() - 1, 4).getValues().forEach(r => {
+        const categoria = String(r[0] || "").trim();  // col A = Women Payment 26'
+        const prod      = String(r[2] || "").trim();  // col C = Diseño/Producto
         if (!prod) return;
-        const raw    = r[2];
+        const raw    = r[3];  // col D = Precio
         const precio = typeof raw === 'number'
           ? raw
           : parseFloat(String(raw).replace(/[^0-9.]/g, '')) || 0;
@@ -1551,19 +1548,11 @@ function agregarEntregaRapida() {
 
         <div class="form-group">
           <label>Categoría *</label>
-          <select id="categoria">
+          <select id="categoria" required>
             <option value="" selected>— Seleccionar —</option>
             ${CAT_OPCIONES.map(c => '<option value="'+c+'">'+c+'</option>').join('')}
           </select>
-        </div>
-
-        <div class="form-group">
-          <label>Proyecto / Cliente *</label>
-          <input type="text" id="proyecto" list="proyectos-list" placeholder="Creamos, Cliente X..." required>
-          <datalist id="proyectos-list">
-            ${proyectos.map(p => '<option value="'+p+'">').join('')}
-          </datalist>
-          <div class="error" id="err-proy">Requerido</div>
+          <div class="error" id="err-cat">Requerido</div>
         </div>
 
         <div class="row">
@@ -1651,15 +1640,15 @@ function agregarEntregaRapida() {
         function validar() {
           const part = document.getElementById('participante').value.trim();
           const prod = document.getElementById('producto').value.trim();
-          const proy = document.getElementById('proyecto').value.trim();
+          const cat  = document.getElementById('categoria').value.trim();
           const b    = Number(document.getElementById('buenas').value) || 0;
           const p    = Number(document.getElementById('precio').value) || 0;
-          document.getElementById('err-part').style.display   = !part     ? 'block' : 'none';
-          document.getElementById('err-prod').style.display   = !prod     ? 'block' : 'none';
-          document.getElementById('err-proy').style.display   = !proy     ? 'block' : 'none';
-          document.getElementById('err-buenas').style.display = (b <= 0)  ? 'block' : 'none';
-          document.getElementById('err-precio').style.display = (p <= 0)  ? 'block' : 'none';
-          return part && prod && proy && b > 0 && p > 0;
+          document.getElementById('err-part').style.display   = !part    ? 'block' : 'none';
+          document.getElementById('err-prod').style.display   = !prod    ? 'block' : 'none';
+          document.getElementById('err-cat').style.display    = !cat     ? 'block' : 'none';
+          document.getElementById('err-buenas').style.display = (b <= 0) ? 'block' : 'none';
+          document.getElementById('err-precio').style.display = (p <= 0) ? 'block' : 'none';
+          return part && prod && cat && b > 0 && p > 0;
         }
 
         let contadorRegistros = 0;
@@ -1705,7 +1694,7 @@ function agregarEntregaRapida() {
             .guardarEntregaServer(
               document.getElementById('participante').value.trim(),
               document.getElementById('producto').value.trim(),
-              document.getElementById('proyecto').value.trim(),
+              document.getElementById('categoria').value.trim(),
               Number(document.getElementById('buenas').value),
               Number(document.getElementById('rechazadas').value),
               Number(document.getElementById('precio').value),
