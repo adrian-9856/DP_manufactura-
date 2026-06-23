@@ -2857,9 +2857,13 @@ function _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ) {
 
 // Devuelve el tab del mes en una hoja externa; lo crea con encabezados si no existe
 function _obtenerTabMes_(ssExt, mes, esCheque) {
-  const HDR = ["Nombre","Tipo de Pago","Servicio","Banco","Tipo de Cuenta",
-               "Numero de Cta","Cuenta de Pago","Quincena 1","Quincena 2","Total Mes"];
+  const HDR_TRANS = ["Nombre","Tipo de Pago","Servicio","Banco","Tipo de Cuenta",
+                     "Numero de Cta","Cuenta de Pago","Quincena 1","Quincena 2","Total Mes"];
+  const HDR_CHQ   = ["#","Nombre","Nº Cheque","Quincena 1","Quincena 2",
+                     "Total Mes","Mes","Programa","Cta de Cheques","Status"];
+  const HDR       = esCheque ? HDR_CHQ : HDR_TRANS;
   const COLOR_HDR = esCheque ? "#1a237e" : "#263238";
+
   let sh = ssExt.getSheetByName(mes);
   if (!sh) {
     sh = ssExt.insertSheet(mes);
@@ -2867,23 +2871,33 @@ function _obtenerTabMes_(ssExt, mes, esCheque) {
       .setFontWeight("bold").setBackground(COLOR_HDR).setFontColor("#ffffff")
       .setHorizontalAlignment("center");
     sh.setFrozenRows(1);
-    sh.setColumnWidth(1, 180); sh.setColumnWidth(2, 110); sh.setColumnWidth(3, 140);
-    sh.setColumnWidth(4, 110); sh.setColumnWidth(5, 110); sh.setColumnWidth(6, 140);
-    sh.setColumnWidth(7, 100); sh.setColumnWidth(8, 90);  sh.setColumnWidth(9, 90);
-    sh.setColumnWidth(10, 100);
-    sh.getRange("F2:F1000").setNumberFormat("@");
-    sh.getRange("H2:J1000").setNumberFormat('"Q "#,##0.00');
+
+    if (esCheque) {
+      [40,180,110,90,90,100,80,140,120,130].forEach((w,i) => sh.setColumnWidth(i+1, w));
+      sh.getRange("D2:F1000").setNumberFormat('"Q "#,##0.00');
+      // Dropdown Status
+      sh.getRange("J2:J1000").setDataValidation(
+        SpreadsheetApp.newDataValidation()
+          .requireValueInList(["Emitido | No liberado","Liberado","Cobrado","Anulado"])
+          .setAllowInvalid(false).build()
+      );
+    } else {
+      [180,110,140,110,110,140,100,90,90,100].forEach((w,i) => sh.setColumnWidth(i+1, w));
+      sh.getRange("F2:F1000").setNumberFormat("@");
+      sh.getRange("H2:J1000").setNumberFormat('"Q "#,##0.00');
+    }
   }
   return sh;
 }
 
 // Escribe pagos desglosados por Servicio en Women Payment 26 y Cheques externo (tab por mes)
+// Cada bloque de Servicio lleva su fila TOTAL al final — una persona puede aparecer en
+// varios bloques si trabajó en más de un Servicio (ej: Ana en Bisuteria Y Servicios)
 function _enviarPagosExterno_(desglose, infoPart, ordenQ, mes) {
   const esQ1 = ordenQ === "Q1";
-  const colQ = esQ1 ? 8 : 9;   // col H = Q1, col I = Q2
 
-  // Separar participantes: cheques vs transferencias
-  const filasTrans = {};
+  // Separar participantes por destino (Cheque vs Transferencia) y por Servicio
+  const filasTrans = {};   // { servicio: [{nombre, info, monto}] }
   const filasChq   = {};
 
   for (const [nombre, servicios] of Object.entries(desglose)) {
@@ -2896,73 +2910,119 @@ function _enviarPagosExterno_(desglose, infoPart, ordenQ, mes) {
     }
   }
 
-  // ── Women Payment 26 — tab por mes ──
-  try {
-    const ssExt = SpreadsheetApp.openById(SS_ID_WOMEN_PAYMENT);
-    const sh    = _obtenerTabMes_(ssExt, mes, false);
-    const lastRow = sh.getLastRow();
-    const data    = lastRow > 1 ? sh.getRange(2, 1, lastRow - 1, 10).getValues() : [];
+  // ── Helper: escribe un bloque de Servicio + fila TOTAL ──────────────────
+  function _bloqueServicio_(sh, servicio, filas, esChequeSheet) {
+    const nCols   = 10;
+    const lastR   = sh.getLastRow();
+    const datos   = lastR > 1 ? sh.getRange(2, 1, lastR - 1, nCols).getValues() : [];
 
-    for (const [servicio, filas] of Object.entries(filasTrans)) {
-      for (const { nombre, info, monto } of filas) {
-        if (monto <= 0) continue;
-        let found = false;
-        for (let i = 0; i < data.length; i++) {
-          if (String(data[i][0]).trim() === nombre && String(data[i][2]).trim() === servicio) {
-            const fila = i + 2;
-            sh.getRange(fila, colQ).setValue(monto);
-            const q1 = Number(data[i][7]) || 0;
-            const q2 = Number(data[i][8]) || 0;
-            sh.getRange(fila, 10).setValue(esQ1 ? monto + q2 : q1 + monto);
-            found = true;
-            break;
-          }
+    // Indices según tipo de hoja
+    const COL_NOMBRE   = esChequeSheet ? 1 : 0;   // 0-based
+    const COL_SERVICIO = esChequeSheet ? 7 : 2;
+    const COL_MARCADOR = esChequeSheet ? 9 : 6;    // "TOTAL" o Status
+    const COL_Q1       = esChequeSheet ? 3 : 7;
+    const COL_Q2       = esChequeSheet ? 4 : 8;
+    const COL_TOT      = esChequeSheet ? 5 : 9;
+
+    for (const { nombre, info, monto } of filas) {
+      if (monto <= 0) continue;
+      // Buscar fila existente (nombre + servicio, excluyendo filas TOTAL)
+      let found = false;
+      for (let i = 0; i < datos.length; i++) {
+        const esTotalRow = String(datos[i][COL_MARCADOR] || "").trim().toUpperCase() === "TOTAL";
+        if (esTotalRow) continue;
+        if (String(datos[i][COL_NOMBRE]).trim()   === nombre   &&
+            String(datos[i][COL_SERVICIO]).trim()  === servicio) {
+          const fila = i + 2;
+          const q1 = esQ1 ? monto : (Number(datos[i][COL_Q1]) || 0);
+          const q2 = esQ1 ? (Number(datos[i][COL_Q2]) || 0) : monto;
+          sh.getRange(fila, COL_Q1 + 1).setValue(q1);
+          sh.getRange(fila, COL_Q2 + 1).setValue(q2);
+          sh.getRange(fila, COL_TOT + 1).setValue(q1 + q2);
+          found = true; break;
         }
-        if (!found) {
-          const nr = sh.getLastRow() + 1;
+      }
+      if (!found) {
+        const nr = sh.getLastRow() + 1;
+        if (!esChequeSheet) {
           sh.getRange(nr, 1, 1, 10).setValues([[
-            nombre, "Pago Cuenta", servicio, info.banco, info.tipoCuenta,
-            String(info.numCuenta), info.cuentaPago,
+            nombre, "Pago Cuenta", servicio,
+            info.banco || "", info.tipoCuenta || "", String(info.numCuenta || ""),
+            info.cuentaPago || "Creamos",
             esQ1 ? monto : 0, esQ1 ? 0 : monto, monto
           ]]);
           sh.getRange(nr, 6).setNumberFormat("@");
           sh.getRange(nr, 8, 1, 3).setNumberFormat('"Q "#,##0.00');
+        } else {
+          // Cheques: #, Nombre, NºCheque, Q1, Q2, Total, Mes, Programa, CtaCheques, Status
+          const contadorChq = datos.filter(r =>
+            String(r[COL_SERVICIO]).trim() === servicio &&
+            String(r[COL_MARCADOR]).trim().toUpperCase() !== "TOTAL" && r[1]
+          ).length + 1;
+          sh.getRange(nr, 1, 1, 10).setValues([[
+            contadorChq, nombre, "",
+            esQ1 ? monto : 0, esQ1 ? 0 : monto, monto,
+            mes, servicio, info.cuentaPago || "Creamos", "Emitido | No liberado"
+          ]]);
+          sh.getRange(nr, 4, 1, 3).setNumberFormat('"Q "#,##0.00');
         }
       }
+    }
+
+    // Recalcular y escribir fila TOTAL del bloque
+    const lastR2 = sh.getLastRow();
+    const datos2 = lastR2 > 1 ? sh.getRange(2, 1, lastR2 - 1, nCols).getValues() : [];
+    let totalQ1 = 0, totalQ2 = 0, totalRowIdx = -1;
+
+    for (let i = 0; i < datos2.length; i++) {
+      const esTotalRow = String(datos2[i][COL_MARCADOR] || "").trim().toUpperCase() === "TOTAL";
+      const sameServ   = String(datos2[i][COL_SERVICIO]).trim() === servicio;
+      if (!sameServ) continue;
+      if (esTotalRow && !datos2[i][COL_NOMBRE]) {
+        totalRowIdx = i + 2;
+      } else if (datos2[i][COL_NOMBRE]) {
+        totalQ1 += Number(datos2[i][COL_Q1]) || 0;
+        totalQ2 += Number(datos2[i][COL_Q2]) || 0;
+      }
+    }
+
+    if (totalRowIdx > 0) {
+      sh.getRange(totalRowIdx, COL_Q1 + 1, 1, 3).setValues([[totalQ1, totalQ2, totalQ1 + totalQ2]]);
+    } else {
+      const nr = sh.getLastRow() + 1;
+      if (!esChequeSheet) {
+        sh.getRange(nr, 1, 1, 10).setValues([[
+          "", "", servicio, "", "", "", "TOTAL",
+          totalQ1, totalQ2, totalQ1 + totalQ2
+        ]]).setFontWeight("bold").setBackground("#cfd8dc");
+        sh.getRange(nr, 8, 1, 3).setNumberFormat('"Q "#,##0.00');
+      } else {
+        sh.getRange(nr, 1, 1, 10).setValues([[
+          "", "TOTAL", "", totalQ1, totalQ2, totalQ1 + totalQ2,
+          "", servicio, "", ""
+        ]]).setFontWeight("bold").setBackground("#c5cae9");
+        sh.getRange(nr, 4, 1, 3).setNumberFormat('"Q "#,##0.00');
+      }
+    }
+  }
+
+  // ── Women Payment 26 ──────────────────────────────────────────────────────
+  try {
+    const ssExt = SpreadsheetApp.openById(SS_ID_WOMEN_PAYMENT);
+    const sh    = _obtenerTabMes_(ssExt, mes, false);
+    for (const [servicio, filas] of Object.entries(filasTrans)) {
+      _bloqueServicio_(sh, servicio, filas, false);
     }
   } catch (e) {
     throw new Error("Women Payment 26: " + e.message);
   }
 
-  // ── Cheques externo — tab por mes ──
+  // ── Cheques externo ───────────────────────────────────────────────────────
   try {
     const ssChq = SpreadsheetApp.openById(SS_ID_CHEQUES_EXT);
     const shChq = _obtenerTabMes_(ssChq, mes, true);
-    const lastRow = shChq.getLastRow();
-    const data    = lastRow > 1 ? shChq.getRange(2, 1, lastRow - 1, 10).getValues() : [];
-
     for (const [servicio, filas] of Object.entries(filasChq)) {
-      for (const { nombre, info, monto } of filas) {
-        if (monto <= 0) continue;
-        let found = false;
-        for (let i = 0; i < data.length; i++) {
-          if (String(data[i][0]).trim() === nombre && String(data[i][2]).trim() === servicio) {
-            shChq.getRange(i + 2, colQ).setValue(monto);
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          const nr = shChq.getLastRow() + 1;
-          shChq.getRange(nr, 1, 1, 10).setValues([[
-            nombre, "Cheque", servicio, info.banco, info.tipoCuenta,
-            String(info.numCuenta), info.cuentaPago,
-            esQ1 ? monto : 0, esQ1 ? 0 : monto, monto
-          ]]);
-          shChq.getRange(nr, 6).setNumberFormat("@");
-          shChq.getRange(nr, 8, 1, 3).setNumberFormat('"Q "#,##0.00');
-        }
-      }
+      _bloqueServicio_(shChq, servicio, filas, true);
     }
   } catch (e) {
     throw new Error("Cheques externo: " + e.message);
