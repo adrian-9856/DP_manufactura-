@@ -32,10 +32,12 @@ const DATA_START_ROW = 5;
 
 // ── Mejora 1: Quincena insertada entre Fecha entrega y Participante ───────────
 const RECEPCIONES_HEADERS = [
-  "#", "Fecha entrega", "Quincena", "Participante", "Creamos ID", "Proyecto / Cliente", "Producto",
+  "#", "Fecha entrega", "Quincena", "Participante", "Creamos ID", "Proyecto / Cliente", "Categoría", "Producto",
   "Unidades buenas", "Unidades rechazadas", "Precio unit. (Q)", "Total Q",
   "Impuesto PC (5%)", "Total a Pagar", "Estado pago"
 ];
+
+const CAT_OPCIONES = ["Bisuteria","Servicios","Costura","Pulsera Project","Niñera","Brackish"];
 
 // Columnas del catálogo de participantes (0-indexed)
 const CAT_COL = {
@@ -149,14 +151,35 @@ function aplicarActualizaciones() {
       }
     }
 
-    // 2. Recepciones — reaplica formato Q a columnas monetarias
+    // 2. Recepciones — insertar columna Categoría si no existe, reaplica formato Q
     const shRec = ss.getSheetByName(SHEET_RECEPCIONES);
-    if (shRec && shRec.getLastRow() >= DATA_START_ROW) {
-      const m = _headerMap_(shRec);
-      const firstCol = m["precio unit. (q)"] || m["total q"];
-      if (firstCol) {
-        const nRows = shRec.getLastRow() - DATA_START_ROW + 1;
-        shRec.getRange(DATA_START_ROW, firstCol, nRows, 4).setNumberFormat('"Q "#,##0.00');
+    if (shRec) {
+      const mRec = _headerMap_(shRec);
+      if (!mRec["categoría"]) {
+        // Insertar después de "Proyecto / Cliente" (col F)
+        const colProy = mRec["proyecto / cliente"] || 6;
+        shRec.insertColumnAfter(colProy);
+        shRec.getRange(HEADER_ROW, colProy + 1).setValue("Categoría")
+          .setBackground("#37474f").setFontColor("#ffffff").setFontWeight("bold")
+          .setHorizontalAlignment("center").setWrap(true).setVerticalAlignment("middle");
+        shRec.setColumnWidth(colProy + 1, 130);
+        shRec.getRange(DATA_START_ROW, colProy + 1, 996).setDataValidation(
+          SpreadsheetApp.newDataValidation()
+            .requireValueInList(CAT_OPCIONES)
+            .setAllowInvalid(true).build()
+        );
+        log.push("✅ Columna 'Categoría' insertada en Recepciones (col " + colProy + "+1)");
+      } else {
+        log.push("☑️ Columna 'Categoría' ya existe en Recepciones");
+      }
+
+      if (shRec.getLastRow() >= DATA_START_ROW) {
+        const m2 = _headerMap_(shRec);
+        const firstCol = m2["precio unit. (q)"] || m2["total q"];
+        if (firstCol) {
+          const nRows = shRec.getLastRow() - DATA_START_ROW + 1;
+          shRec.getRange(DATA_START_ROW, firstCol, nRows, 4).setNumberFormat('"Q "#,##0.00');
+        }
       }
       log.push("✅ Formato Q restaurado en Recepciones");
     }
@@ -985,14 +1008,21 @@ function _setupRecepciones_(sh) {
   sh.setFrozenRows(HEADER_ROW);
   sh.setRowHeight(HEADER_ROW, 30);
 
-  // #|Fecha|Quincena|Participante|CreamosID|Proyecto|Producto|UBuenas|URechaz|PrecioU|TotalQ|ImpPC|TotalPagar|Estado
-  const widths = [45, 90, 110, 150, 100, 160, 120, 100, 120, 90, 90, 95, 95, 90];
+  // #|Fecha|Quincena|Participante|CreamosID|Proyecto|Categoría|Producto|UBuenas|URechaz|PrecioU|TotalQ|ImpPC|TotalPagar|Estado
+  const widths = [45, 90, 110, 150, 100, 160, 130, 120, 100, 120, 90, 90, 95, 95, 90];
   widths.forEach((w, i) => sh.setColumnWidth(i + 1, w));
 
   sh.getRange(`A${HEADER_ROW + 1}:${lastCol}1000`).setBackground("#ffffff").setFontColor("#212121");
   sh.getRange(`A${HEADER_ROW + 1}:${lastCol}1000`).setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
   sh.getRange(`B${HEADER_ROW + 1}:B1000`).setNumberFormat("dd/MM/yyyy");       // Fecha entrega
-  sh.getRange(`J${HEADER_ROW + 1}:M1000`).setNumberFormat('"Q "#,##0.00');     // Precio, Total Q, Impuesto, Total a Pagar
+  sh.getRange(`K${HEADER_ROW + 1}:N1000`).setNumberFormat('"Q "#,##0.00');     // Precio, Total Q, Impuesto, Total a Pagar
+
+  // Dropdown Categoría (col G = 7)
+  sh.getRange(DATA_START_ROW, 7, 996).setDataValidation(
+    SpreadsheetApp.newDataValidation()
+      .requireValueInList(CAT_OPCIONES)
+      .setAllowInvalid(true).build()
+  );
 }
 
 function _colLetter_(col) {
@@ -1370,19 +1400,20 @@ function agregarEntregaRapida() {
     const proyectos     = _obtenerHistorico_("proyectos");
     const metodos       = _obtenerHistorico_("metodos");
 
-    // Leer productos y precios del Catálogo_Productos (col B = nombre, col C = precio)
+    // Leer productos, precios y categorías del Catálogo_Productos
+    // Col A = Categoría, Col B = Diseño/Producto, Col C = Precio
     const productosConPrecio = [];
     const catProd = ss.getSheetByName(SHEET_CATALOGO_PROD);
     if (catProd && catProd.getLastRow() > 1) {
       catProd.getRange(2, 1, catProd.getLastRow() - 1, 3).getValues().forEach(r => {
-        const prod = String(r[1] || "").trim();
+        const categoria = String(r[0] || "").trim();
+        const prod      = String(r[1] || "").trim();
         if (!prod) return;
-        // Maneja tanto número puro (10.5) como texto con formato ("Q 10.50")
         const raw    = r[2];
         const precio = typeof raw === 'number'
           ? raw
           : parseFloat(String(raw).replace(/[^0-9.]/g, '')) || 0;
-        productosConPrecio.push({ nombre: prod, precio });
+        productosConPrecio.push({ nombre: prod, precio, categoria });
       });
     }
 
@@ -1495,6 +1526,14 @@ function agregarEntregaRapida() {
         </div>
 
         <div class="form-group">
+          <label>Categoría *</label>
+          <select id="categoria">
+            <option value="">— Se llena al elegir producto —</option>
+            ${CAT_OPCIONES.map(c => '<option value="'+c+'">'+c+'</option>').join('')}
+          </select>
+        </div>
+
+        <div class="form-group">
           <label>Proyecto / Cliente *</label>
           <input type="text" id="proyecto" list="proyectos-list" placeholder="Creamos, Cliente X..." required>
           <datalist id="proyectos-list">
@@ -1555,7 +1594,19 @@ function agregarEntregaRapida() {
             const campo = document.getElementById('precio');
             if (!val) return;
             const match = productosConPrecio.find(p => p.nombre.trim().toLowerCase() === val);
-            if (match && match.precio > 0) { campo.value = match.precio; actualizarResumen(); }
+            if (match) {
+              if (match.precio > 0) { campo.value = match.precio; actualizarResumen(); }
+              if (match.categoria) {
+                const sel = document.getElementById('categoria');
+                sel.value = match.categoria;
+                if (sel.value !== match.categoria) {
+                  // valor no está en la lista, agregarlo temporalmente
+                  const opt = document.createElement('option');
+                  opt.value = match.categoria; opt.textContent = match.categoria;
+                  sel.appendChild(opt); sel.value = match.categoria;
+                }
+              }
+            }
           }, 80);
         }
 
@@ -1635,7 +1686,8 @@ function agregarEntregaRapida() {
               Number(document.getElementById('rechazadas').value),
               Number(document.getElementById('precio').value),
               "",
-              document.getElementById('fecha').value
+              document.getElementById('fecha').value,
+              document.getElementById('categoria').value.trim()
             );
         }
       </script>
@@ -1651,7 +1703,7 @@ function agregarEntregaRapida() {
   }
 }
 
-function guardarEntregaServer(participante, producto, proyecto, buenas, rechazadas, precio, metodo, fechaStr) {
+function guardarEntregaServer(participante, producto, proyecto, buenas, rechazadas, precio, metodo, fechaStr, categoria) {
   try {
     const ss  = SpreadsheetApp.getActive();
     const sh  = ss.getSheetByName(SHEET_RECEPCIONES);
@@ -1688,6 +1740,7 @@ function guardarEntregaServer(participante, producto, proyecto, buenas, rechazad
     sh.getRange(row, m["participante"]).setValue(participante || "");
     sh.getRange(row, m["creamos id"]).setValue(creamosID);
     sh.getRange(row, m["proyecto / cliente"]).setValue(proyecto || "");
+    if (m["categoría"]) sh.getRange(row, m["categoría"]).setValue(categoria || "");
     sh.getRange(row, m["producto"]).setValue(producto || "");
     sh.getRange(row, m["unidades buenas"]).setValue(buenas || 0);
     sh.getRange(row, m["unidades rechazadas"]).setValue(rechazadas || 0);
@@ -2542,8 +2595,8 @@ function _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ) {
   const m       = _headerMap_(rec);
   const dataRec = rec.getDataRange().getValues();
   const dataCat = cat.getDataRange().getValues();
-  const colPagar = m["total a pagar"] ? m["total a pagar"] - 1 : m["total q"] - 1;
-  const colProyecto = m["proyecto / cliente"] ? m["proyecto / cliente"] - 1 : -1;
+  const colPagar     = m["total a pagar"] ? m["total a pagar"] - 1 : m["total q"] - 1;
+  const colCategoria = m["categoría"] ? m["categoría"] - 1 : (m["proyecto / cliente"] ? m["proyecto / cliente"] - 1 : -1);
 
   // totales[participante] = monto total (interno)
   // desglose[participante][servicio] = monto (para hojas externas)
@@ -2556,7 +2609,7 @@ function _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ) {
     if (!p) continue;
     if (q && q !== nombreQ) continue;
     const tap      = Math.round(Number(r[colPagar]) || 0);
-    const servicio = colProyecto >= 0 ? String(r[colProyecto] || "Sin proyecto").trim() : "Sin proyecto";
+    const servicio = colCategoria >= 0 ? String(r[colCategoria] || "Sin categoría").trim() : "Sin categoría";
     totales[p] = (totales[p] || 0) + tap;
     if (!desglose[p]) desglose[p] = {};
     desglose[p][servicio] = (desglose[p][servicio] || 0) + tap;
