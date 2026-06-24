@@ -35,7 +35,7 @@ const DATA_START_ROW = 5;
 const RECEPCIONES_HEADERS = [
   "#", "Fecha entrega", "Quincena", "Participante", "Creamos ID", "Proyecto / Cliente", "Categoría", "Producto",
   "Unidades buenas", "Unidades rechazadas", "Precio unit. (Q)", "Total Q",
-  "Impuesto PC (5%)", "Total a Pagar", "Estado pago"
+  "Total a Pagar", "Estado pago"
 ];
 
 const CAT_OPCIONES = ["Pulsera Project","Brackish","Bisuteria","Servicios"];
@@ -468,7 +468,7 @@ function _generarHojaHistorial_(ss, nombre, infoRow) {
 
   // ── Encabezados tabla de entregas ──
   const hdrsEntregas = ["Fecha", "Quincena", "Proyecto / Servicio", "Producto",
-                        "Unidades buenas", "Total Q", "Impuesto PC", "Total a Pagar"];
+                        "Unidades buenas", "Total Q", "Total a Pagar"];
   sh.getRange(3, 1, 1, hdrsEntregas.length).setValues([hdrsEntregas])
     .setFontWeight("bold").setBackground("#37474f").setFontColor("#ffffff")
     .setHorizontalAlignment("center");
@@ -488,8 +488,7 @@ function _generarHojaHistorial_(ss, nombre, infoRow) {
     const colProd  = m["producto"]      ? m["producto"] - 1      : 6;
     const colUB    = m["unidades buenas"]? m["unidades buenas"] - 1 : 7;
     const colTQ    = m["total q"]       ? m["total q"] - 1       : 10;
-    const colImp   = (m["impuesto pc (5%)"] || m["impuesto pc"]) ? (m["impuesto pc (5%)"] || m["impuesto pc"]) - 1 : 11;
-    const colTAP   = m["total a pagar"] ? m["total a pagar"] - 1 : 12;
+    const colTAP   = m["total a pagar"] ? m["total a pagar"] - 1 : 11;
 
     const filas = dataRec.filter(r => String(r[m["participante"] - 1] || "").trim() === nombre);
 
@@ -499,18 +498,17 @@ function _generarHojaHistorial_(ss, nombre, infoRow) {
         : String(r[colFecha] || "");
       const tap   = Math.round(Number(r[colTAP]) || 0);
       totalGeneral += tap;
-      sh.getRange(filaActual, 1, 1, 8).setValues([[
+      sh.getRange(filaActual, 1, 1, 7).setValues([[
         fecha,
         String(r[colQ]   || ""),
         String(r[colProy] || ""),
         String(r[colProd] || ""),
         Number(r[colUB]  || 0),
         Number(r[colTQ]  || 0),
-        Number(r[colImp] || 0),
         tap
       ]]);
-      sh.getRange(filaActual, 6, 1, 3).setNumberFormat(fmtQ);
-      sh.getRange(filaActual, 1, 1, 8).setBackground(filaActual % 2 === 0 ? "#f5f5f5" : "#ffffff");
+      sh.getRange(filaActual, 6, 1, 2).setNumberFormat(fmtQ);
+      sh.getRange(filaActual, 1, 1, 7).setBackground(filaActual % 2 === 0 ? "#f5f5f5" : "#ffffff");
       filaActual++;
     });
 
@@ -639,8 +637,8 @@ function migrarDatosExistentes() {
     const shRecMig = ss.getSheetByName(SHEET_RECEPCIONES);
     if (shRecMig) {
       const hdrsRec   = shRecMig.getRange(HEADER_ROW, 1, 1, shRecMig.getLastColumn()).getValues()[0];
-      const tieneImp  = hdrsRec.some(h => String(h).toLowerCase().includes("impuesto"));
-      if (!tieneImp) {
+      const tieneCategoria = hdrsRec.some(h => String(h).toLowerCase().includes("categoría") || String(h).toLowerCase().includes("categoria"));
+      if (!tieneCategoria) {
         const nCols   = RECEPCIONES_HEADERS.length;
         const lastCol = _colLetter_(nCols);
         // Reescribir fila de encabezados
@@ -651,8 +649,7 @@ function migrarDatosExistentes() {
         // Actualizar rango del título en fila 1
         shRecMig.getRange(1, 1, 1, nCols).merge();
         // Anchos para columnas nuevas
-        shRecMig.setColumnWidth(12, 90); // Impuesto PC
-        shRecMig.setColumnWidth(13, 90); // Total a Pagar
+        shRecMig.setColumnWidth(13, 95); // Total a Pagar
         // Limpiar formato en datos
         if (shRecMig.getLastRow() >= DATA_START_ROW) {
           shRecMig.getRange(`A${DATA_START_ROW}:${lastCol}1000`)
@@ -926,13 +923,12 @@ function repararRedondeoMontos() {
       log.push(label + ": " + fixes + " valor(es) ajustado(s)");
     }
 
-    // 1. Recepciones — recalcula Impuesto y Total a Pagar desde Total Q con redondeo
+    // 1. Recepciones — sincroniza Total a Pagar = Total Q (sin impuesto)
     const shRec = ss.getSheetByName(SHEET_RECEPCIONES);
     if (shRec && shRec.getLastRow() >= DATA_START_ROW) {
       const m      = _headerMap_(shRec);
       const colPU  = m["precio unit. (q)"] || m["precio unit.(q)"];
       const colTQ  = m["total q"];
-      const colImp = m["impuesto pc (5%)"] || m["impuesto pc"];
       const colTAP = m["total a pagar"];
       const nRows  = shRec.getLastRow() - DATA_START_ROW + 1;
       const ncols  = shRec.getLastColumn();
@@ -941,15 +937,12 @@ function repararRedondeoMontos() {
       for (let i = 0; i < data.length; i++) {
         const tq = Number(data[i][(colTQ || 1) - 1]) || 0;
         if (tq <= 0) continue;
-        const newImp = Math.round(tq * 0.05);
-        const newTap = Math.round(tq + newImp);
-        if (colImp) { data[i][colImp - 1] = newImp; fixes++; }
-        if (colTAP) { data[i][colTAP - 1] = newTap; fixes++; }
+        if (colTAP) { data[i][colTAP - 1] = tq; fixes++; }
       }
       shRec.getRange(DATA_START_ROW, 1, nRows, ncols).setValues(data);
       const firstCol = colPU || colTQ;
-      if (firstCol) shRec.getRange(DATA_START_ROW, firstCol, nRows, 4).setNumberFormat(fmtQ);
-      log.push("Recepciones: " + fixes + " valor(es) recalculado(s), formato Q aplicado");
+      if (firstCol) shRec.getRange(DATA_START_ROW, firstCol, nRows, 3).setNumberFormat(fmtQ);
+      log.push("Recepciones: " + fixes + " valor(es) sincronizado(s), formato Q aplicado");
     }
 
     // 2. Cheques, Transferencias, Historial_Pagos — re-sumar desde Recepciones (fuente única de verdad)
@@ -1170,14 +1163,14 @@ function _setupRecepciones_(sh) {
   sh.setFrozenRows(HEADER_ROW);
   sh.setRowHeight(HEADER_ROW, 30);
 
-  // #|Fecha|Quincena|Participante|CreamosID|Proyecto|Categoría|Producto|UBuenas|URechaz|PrecioU|TotalQ|ImpPC|TotalPagar|Estado
-  const widths = [45, 90, 110, 150, 100, 160, 130, 120, 100, 120, 90, 90, 95, 95, 90];
+  // #|Fecha|Quincena|Participante|CreamosID|Proyecto|Categoría|Producto|UBuenas|URechaz|PrecioU|TotalQ|TotalPagar|Estado
+  const widths = [45, 90, 110, 150, 100, 160, 130, 120, 100, 120, 90, 90, 95, 90];
   widths.forEach((w, i) => sh.setColumnWidth(i + 1, w));
 
   sh.getRange(`A${HEADER_ROW + 1}:${lastCol}1000`).setBackground("#ffffff").setFontColor("#212121");
   sh.getRange(`A${HEADER_ROW + 1}:${lastCol}1000`).setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
   sh.getRange(`B${HEADER_ROW + 1}:B1000`).setNumberFormat("dd/MM/yyyy");       // Fecha entrega
-  sh.getRange(`K${HEADER_ROW + 1}:N1000`).setNumberFormat('"Q "#,##0.00');     // Precio, Total Q, Impuesto, Total a Pagar
+  sh.getRange(`K${HEADER_ROW + 1}:M1000`).setNumberFormat('"Q "#,##0.00');     // Precio unit., Total Q, Total a Pagar
 
   // Dropdown Categoría (col G = 7)
   sh.getRange(DATA_START_ROW, 7, 996).setDataValidation(
@@ -1737,7 +1730,6 @@ function agregarEntregaRapida() {
           <div class="resumen-row"><span>Unidades buenas:</span><span id="res-buenas">0</span></div>
           <div class="resumen-row"><span>Precio unitario:</span><span>Q <span id="res-precio">0.00</span></span></div>
           <div class="resumen-row"><span>Total bruto:</span><span>Q <span id="res-bruto">0.00</span></span></div>
-          <div class="resumen-row" style="color:#1565c0;"><span>+ Imp. Pequeño Contribuyente (5%):</span><span>+ Q <span id="res-impuesto">0.00</span></span></div>
           <div class="resumen-row total"><span>Total a pagar:</span><span>Q <span id="res-total">0.00</span></span></div>
         </div>
 
@@ -1787,12 +1779,10 @@ function agregarEntregaRapida() {
           const b       = Number(document.getElementById('buenas').value) || 0;
           const p       = Number(document.getElementById('precio').value) || 0;
           const bruto   = b * p;
-          const imp     = Math.round(bruto * 0.05);
-          const total   = Math.round(bruto + imp);  // programa paga bruto + impuesto
+          const total   = bruto;
           document.getElementById('res-buenas').textContent   = b;
           document.getElementById('res-precio').textContent   = p.toFixed(2);
           document.getElementById('res-bruto').textContent    = bruto.toFixed(2);
-          document.getElementById('res-impuesto').textContent = imp.toFixed(2);
           document.getElementById('res-total').textContent    = total.toFixed(2);
           document.getElementById('resumen').style.display    = (b > 0 || p > 0) ? 'block' : 'none';
         }
@@ -1837,7 +1827,7 @@ function agregarEntregaRapida() {
           const btn   = document.getElementById('btn-guardar');
           const b     = Number(document.getElementById('buenas').value) || 0;
           const p     = Number(document.getElementById('precio').value) || 0;
-          const total = b * p * 1.05;           // bruto + impuesto 5%
+          const total = b * p;
           btn.disabled = true; btn.style.opacity = '0.6';
           document.getElementById('loading').style.display = 'block';
           google.script.run
@@ -1884,9 +1874,8 @@ function guardarEntregaServer(participante, producto, proyecto, buenas, rechazad
     const m   = _headerMap_(sh);
     const row = Math.max(sh.getLastRow() + 1, DATA_START_ROW);
 
-    const total      = buenas * precio;         // subtotal bruto
-    const impuesto   = Math.round(total * 0.05);          // 5% pequeño contribuyente
-    const totalPagar = Math.round(total + impuesto);      // lo que el programa paga
+    const total      = buenas * precio;
+    const totalPagar = total;
     const quincena = _obtenerQuincenaActiva_();
 
     // Fecha desde el formulario (YYYY-MM-DD) o hoy si no viene
@@ -1919,14 +1908,13 @@ function guardarEntregaServer(participante, producto, proyecto, buenas, rechazad
     sh.getRange(row, m["unidades rechazadas"]).setValue(rechazadas || 0);
     sh.getRange(row, m["precio unit. (q)"]).setValue(precio || 0).setNumberFormat('"Q "#,##0.00');
     sh.getRange(row, m["total q"]).setValue(total || 0).setNumberFormat('"Q "#,##0.00');
-    if (m["impuesto pc (5%)"]) sh.getRange(row, m["impuesto pc (5%)"]).setValue(impuesto).setNumberFormat('"Q "#,##0.00');
     if (m["total a pagar"])    sh.getRange(row, m["total a pagar"]).setValue(totalPagar).setNumberFormat('"Q "#,##0.00');
     sh.getRange(row, m["estado pago"]).setValue("Espera cierre quincena");
 
     _guardarHistorico_("productos", producto);
     _guardarHistorico_("proyectos", proyecto);
 
-    SpreadsheetApp.getActive().toast("✅ Total Q " + totalPagar.toFixed(2), null, 2);
+    SpreadsheetApp.getActive().toast("✅ Total Q " + total.toFixed(2), null, 2);
     actualizarTodo();
     return true;
   } catch (e) {
@@ -2030,7 +2018,6 @@ function calcularTotalesColumnas() {
   const colUB   = m["unidades buenas"];
   const colPU   = m["precio unit. (q)"];
   const colTQ   = m["total q"];
-  const colImp  = m["impuesto pc (5%)"] || m["impuesto pc"];
   const colTAP  = m["total a pagar"];
   const nRows   = sh.getLastRow() - DATA_START_ROW + 1;
   const ncols   = sh.getLastColumn();
@@ -2038,14 +2025,11 @@ function calcularTotalesColumnas() {
 
   for (let i = 0; i < data.length; i++) {
     if (!data[i][colPart - 1]) continue;
-    const b   = Number(data[i][colUB  - 1]) || 0;
-    const p   = Number(data[i][colPU  - 1]) || 0;
-    const tq  = b * p;
-    const imp = Math.round(tq * 0.05);
-    const tap = Math.round(tq + imp);
+    const b  = Number(data[i][colUB - 1]) || 0;
+    const p  = Number(data[i][colPU - 1]) || 0;
+    const tq = b * p;
     data[i][colTQ  - 1] = tq;
-    if (colImp) data[i][colImp - 1] = imp;
-    if (colTAP) data[i][colTAP - 1] = tap;
+    if (colTAP) data[i][colTAP - 1] = tq;
   }
   sh.getRange(DATA_START_ROW, 1, nRows, ncols).setValues(data);
 
