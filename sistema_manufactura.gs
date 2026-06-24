@@ -623,6 +623,17 @@ function migrarDatosExistentes() {
       }
     }
 
+    // 3a. Actualizar dropdown Tipo Cuenta (col E) para incluir "Cheque"
+    [ss.getSheetByName(SHEET_CATALOGOS), ss.getSheetByName(SHEET_INACTIVOS)].forEach(shCat => {
+      if (!shCat) return;
+      shCat.getRange("E2:E1000").setDataValidation(
+        SpreadsheetApp.newDataValidation()
+          .requireValueInList(["Monetaria", "Ahorro", "Corriente", "Cheque"])
+          .setAllowInvalid(true).build()
+      );
+    });
+    log.push("Tipo Cuenta: dropdown actualizado (incluye Cheque)");
+
     // 3. Cheques y Transferencias: nueva estructura (solo si están vacías)
     [SHEET_CHEQUES, SHEET_TRANSFERENCIAS, SHEET_HISTORIAL_PAGOS].forEach(nombre => {
       const sh = ss.getSheetByName(nombre);
