@@ -85,6 +85,7 @@ function onOpen() {
       .addItem("🗓️ Crear quincena inicial",         "crearQuincenaInicial")
       .addItem("📅 Cerrar quincena actual",         "cerrarQuincenaActual")
       .addItem("🗃️ Cerrar mes manualmente",         "cerrarMes")
+      .addItem("📤 Reenviar quincena a hojas externas", "reenviarQuincenaExternas")
       .addSeparator()
       // — Mantenimiento —
       .addItem("🔢 Reparar montos y totales",       "repararRedondeoMontos")
@@ -1250,7 +1251,7 @@ function _setupCatalogos_(sh) {
   );
   sh.getRange("E2:E1000").setDataValidation(
     SpreadsheetApp.newDataValidation()
-      .requireValueInList(["Monetaria", "Ahorro", "Corriente"])
+      .requireValueInList(["Monetaria", "Ahorro", "Corriente", "Cheque"])
       .setAllowInvalid(true).build()
   );
   sh.getRange("K2:K1000").setDataValidation(
@@ -2836,6 +2837,87 @@ function _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ) {
     _enviarPagosExterno_(desglose, infoPart, ordenQ, mes);
   } catch (e) {
     SpreadsheetApp.getActive().toast("⚠️ Hojas internas OK. Error al escribir hojas externas: " + e.message, null, 6);
+  }
+}
+
+// Reenvía manualmente los pagos de una quincena cerrada a Women Payment 26 y Cheques externo
+function reenviarQuincenaExternas() {
+  const ss = SpreadsheetApp.getActive();
+  const ui = SpreadsheetApp.getUi();
+
+  // Listar quincenas disponibles desde PERIODOS
+  const shP = ss.getSheetByName(SHEET_PERIODOS);
+  if (!shP || shP.getLastRow() < 2) return ui.alert("No hay quincenas registradas en PERIODOS.");
+
+  // cols: A=idx, B=nombre, C=inicio, D=fin, E=estado, F=Q1|Q2
+  const periodos = shP.getRange(2, 1, shP.getLastRow() - 1, 6).getValues()
+    .filter(r => r[1]);
+
+  if (!periodos.length) return ui.alert("No hay quincenas disponibles.");
+
+  const resp = ui.prompt(
+    "📤 Reenviar a hojas externas",
+    "Quincenas disponibles:\n" + periodos.map((r, i) => (i+1) + ". " + r[1] + " [" + (r[5] || "Q1") + "]").join("\n") + "\n\nEscribe el número:",
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  const idx = parseInt(resp.getResponseText().trim()) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= periodos.length) return ui.alert("Número no válido.");
+
+  const filaP   = periodos[idx];
+  const nombreQ = String(filaP[1]).trim();
+  const ordenQ  = String(filaP[5] || "Q1").trim();
+  const fechaFin = filaP[3] instanceof Date ? filaP[3] : new Date();
+  const tz  = Session.getScriptTimeZone();
+  const mes = Utilities.formatDate(fechaFin, tz, "MMMM yyyy");
+
+  // Reconstruir desglose e infoPart desde Recepciones
+  const rec = ss.getSheetByName(SHEET_RECEPCIONES);
+  const cat = ss.getSheetByName(SHEET_CATALOGOS);
+  if (!rec || !cat) return ui.alert("Faltan hojas del sistema.");
+
+  const m       = _headerMap_(rec);
+  const dataRec = rec.getDataRange().getValues();
+  const dataCat = cat.getDataRange().getValues();
+  const colPagar     = m["total a pagar"] ? m["total a pagar"] - 1 : m["total q"] - 1;
+  const colCategoria = m["categoría"] ? m["categoría"] - 1 : (m["proyecto / cliente"] ? m["proyecto / cliente"] - 1 : -1);
+
+  const desglose = {};
+  for (let i = DATA_START_ROW - 1; i < dataRec.length; i++) {
+    const r = dataRec[i];
+    const p = String(r[m["participante"] - 1] || "").trim();
+    const q = String(r[m["quincena"]     - 1] || "").trim();
+    if (!p) continue;
+    if (q && q !== nombreQ) continue;
+    const tap      = Math.round(Number(r[colPagar]) || 0);
+    if (tap <= 0) continue;
+    const servicio = colCategoria >= 0 ? String(r[colCategoria] || "Sin categoría").trim() : "Sin categoría";
+    if (!desglose[p]) desglose[p] = {};
+    desglose[p][servicio] = (desglose[p][servicio] || 0) + tap;
+  }
+
+  const infoPart = {};
+  for (let i = 1; i < dataCat.length; i++) {
+    const row    = dataCat[i];
+    const nombre = String(row[CAT_COL.NOMBRE] || "").trim();
+    if (!nombre) continue;
+    infoPart[nombre] = {
+      cid:        String(row[CAT_COL.ID]         || "").trim(),
+      banco:      String(row[CAT_COL.BANCO]       || "").trim(),
+      tipoCuenta: String(row[CAT_COL.TIPO_CUENTA] || "").trim(),
+      numCuenta:  String(row[CAT_COL.NUM_CUENTA]  || "").trim(),
+      titular:    String(row[CAT_COL.TITULAR]     || "").trim(),
+      cuentaPago: String(row[CAT_COL.CUENTA_PAGO] || "Creamos").trim(),
+    };
+  }
+
+  if (!Object.keys(desglose).length) return ui.alert("No hay entregas para la quincena: " + nombreQ);
+
+  try {
+    _enviarPagosExterno_(desglose, infoPart, ordenQ, mes);
+    ss.toast("✅ Datos de '" + nombreQ + "' reenviados a Women Payment 26 y Cheques externo.", null, 5);
+  } catch (e) {
+    ui.alert("❌ Error al reenviar: " + e.message);
   }
 }
 
