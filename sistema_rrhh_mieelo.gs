@@ -1909,7 +1909,7 @@ function registrarPagosQuincena() { _run(function() {
         var q2new = quincenaLabel === "Q2" ? monto : 0;
         var nuevaFila = [nombreOficial, "Transferencia", info.servicio, info.banco,
                          info.tipoCuenta, info.numCuenta, cuentaPago,
-                         q1new, q2new, q1new + q2new, mesNombre, anioNum];
+                         q1new, q2new, q1new + q2new, mesNombre, anioNum, "Pendiente"];
         hTransf.appendRow(nuevaFila);
         var newRowT = hTransf.getLastRow();
         hTransf.getRange(newRowT, 8, 1, 3).setNumberFormat('"Q"#,##0.00');
