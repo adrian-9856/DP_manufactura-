@@ -1948,7 +1948,15 @@ function registrarPagosQuincena() { _run(function() {
     });
 
     if (Object.keys(desgloseExt).length > 0) {
-      _enviarPagosExterno_(desgloseExt, infoPartExt, quincenaLabel, mesNombre + " " + anioNum);
+      // IMPORTANTE: el nombre del tab del mes debe coincidir EXACTO con el que
+      // genera sistema_manufactura.gs (mismo Sheet externo, compartido entre ambos
+      // sistemas), que usa Utilities.formatDate(fechaFin, tz, "MMMM yyyy") — anclado
+      // en la fecha de FIN de la quincena, no en CFG.MESES (que da "Julio" con
+      // mayúscula y rompería el match de pestaña).
+      var mesExterno = (typeof fecFin !== "undefined" && fecFin && !isNaN(fecFin))
+        ? Utilities.formatDate(fecFin, CFG.TIMEZONE, "MMMM yyyy")
+        : Utilities.formatDate(new Date(), CFG.TIMEZONE, "MMMM yyyy");
+      _enviarPagosExterno_(desgloseExt, infoPartExt, quincenaLabel, mesExterno);
     }
   } catch (eExt) {
     SpreadsheetApp.getActive().toast("⚠️ Pagos internos OK. Error hojas externas: " + eExt.message, null, 6);
@@ -8768,6 +8776,27 @@ function _obtenerTabMes_(ssExt, mes, esCheque) {
 // Escribe pagos desglosados por Servicio en Women Payment 26 y Cheques externo (tab por mes)
 // ordenQ recibe quincenaLabel ("Q1" o "Q2", tal como lo usa registrarPagosQuincena)
 function _enviarPagosExterno_(desglose, infoPart, ordenQ, mes) {
+  // Lock: evita que dos ejecuciones de ESTE sistema (doble clic, reintento, trigger)
+  // escriban al mismo tiempo en las hojas externas y se pisen filas entre sí.
+  // No protege contra choques con sistema_manufactura.gs (proyecto de script distinto:
+  // LockService no puede sincronizar entre dos proyectos separados) — por eso, evita
+  // correr "Registrar pagos de quincena" (RRHH) y "Cerrar quincena" (Manufactura)
+  // al mismo tiempo si ambos caen en el mismo minuto.
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    throw new Error("No se pudo obtener acceso exclusivo a las hojas externas (otra ejecución en curso). Intenta de nuevo en unos segundos.");
+  }
+
+  try {
+    _enviarPagosExterno_impl_(desglose, infoPart, ordenQ, mes);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _enviarPagosExterno_impl_(desglose, infoPart, ordenQ, mes) {
   var esQ1 = String(ordenQ) === "Q1";
 
   var filasTrans = {};   // { servicio: [{nombre, info, monto}] } — TODOS
