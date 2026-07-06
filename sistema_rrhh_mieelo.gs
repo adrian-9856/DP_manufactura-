@@ -1973,6 +1973,10 @@ function registrarPagosQuincena() { _run(function() {
     msg += "\n\n⚠️ Avisos:\n" + erroresPago.join("\n");
   }
 
+  // ── Paso 8b: Capturar a PowerBI_Export ANTES de que la pestaña del reporte
+  // se borre en el cierre de Q2 (_cerrarPeriodoQ2 elimina esa hoja del Sheet).
+  try { exportarParaPowerBI(); } catch (eExpPBI) { Logger.log("exportarParaPowerBI: " + eExpPBI.message); }
+
   // ── Paso 9: Si es Q2 → exportar PDF + eliminar hoja + marcar Pagado ──
   if (quincenaLabel === "Q2") {
     msg += "\n\n📄 Es Q2 — generando PDF y cerrando período...";
@@ -8139,12 +8143,25 @@ function exportarParaPowerBI() { _run(function() {
 
   var NOMBRE_HOJA = "PowerBI_Export";
   var hExp = ss.getSheetByName(NOMBRE_HOJA);
-  if (!hExp) {
-    hExp = ss.insertSheet(NOMBRE_HOJA);
-  } else {
-    hExp.clearContents();
-    hExp.clearFormats();
+  var esNuevaHojaExp = !hExp;
+  if (esNuevaHojaExp) hExp = ss.insertSheet(NOMBRE_HOJA);
+
+  // IMPORTANTE: al cerrar una quincena (Q2), _cerrarPeriodoQ2 BORRA la pestaña
+  // del reporte (solo queda el PDF en Drive). Si no preserváramos las filas ya
+  // exportadas de periodos cerrados, se perderían para siempre en la próxima
+  // exportación. Por eso guardamos aquí lo que ya había ANTES de limpiar,
+  // indexado por "mes|año|quincena", y lo recuperamos más abajo para los
+  // periodos cuya pestaña ya no existe.
+  var filasPreviasPorPeriodo = {};
+  if (!esNuevaHojaExp && hExp.getLastRow() > 1) {
+    hExp.getRange(2, 1, hExp.getLastRow() - 1, hExp.getLastColumn()).getValues().forEach(function(fp) {
+      var claveP = String(fp[11] || "") + "|" + String(fp[12] || "") + "|" + String(fp[13] || "");
+      if (!filasPreviasPorPeriodo[claveP]) filasPreviasPorPeriodo[claveP] = [];
+      filasPreviasPorPeriodo[claveP].push(fp);
+    });
   }
+  hExp.clearContents();
+  hExp.clearFormats();
 
   // Encabezados
   var HEADERS = [
@@ -8179,91 +8196,94 @@ function exportarParaPowerBI() { _run(function() {
     });
   }
 
-  // Leer PARTICIPANTES
+  // Leer PARTICIPANTES — índices correctos del esquema de 23 columnas (A–W)
   var hP = ss.getSheetByName(CFG.HOJAS.PARTICIPANTES);
-  var mapaParticipantes = {}; // nombre → {id,proyecto,programa,etapa,categoria,tarifa,tieneFactura,banco,formaPago,hijosCCI,estipendio}
+  var mapaParticipantes = {}; // nombre → {id,proyecto,programa,etapa,categoria,tarifa,tieneFactura,banco,formaPago,hijosCCI}
   if (hP && hP.getLastRow() > 1) {
-    hP.getRange(2, 1, hP.getLastRow() - 1, 19).getValues().forEach(function(r) {
+    hP.getRange(2, 1, hP.getLastRow() - 1, 23).getValues().forEach(function(r) {
       var nombre = String(r[1] || "").trim();
       if (!nombre) return;
       mapaParticipantes[nombre] = {
         id:           String(r[0]  || "").trim(),
-        proyecto:     String(r[2]  || "").trim(),
-        programa:     String(r[3]  || "").trim(),
-        etapa:        String(r[4]  || "").trim(),
-        categoria:    String(r[8]  || "").trim(),
-        tarifa:       parseFloat(r[9])  || 0,
-        tieneFactura: String(r[10] || "").trim(),
-        banco:        String(r[14] || "").trim(),
-        formaPago:    String(r[17] || "").trim(),
-        hijosCCI:     mapaHijosCCI[nombre] || "No",
-        estipendio:   0
+        proyecto:     String(r[6]  || "").trim(),  // G = Proyecto
+        programa:     String(r[7]  || "").trim(),  // H = Programa
+        etapa:        String(r[8]  || "").trim(),  // I = Etapa
+        categoria:    String(r[12] || "").trim(),  // M = Categoria
+        tarifa:       parseFloat(r[13]) || 0,      // N = Tarifa_Hora
+        tieneFactura: String(r[14] || "").trim(),  // O = Tiene_Factura
+        banco:        String(r[18] || "").trim(),  // S = Banco
+        formaPago:    String(r[21] || "").trim(),  // V = Forma_Pago
+        hijosCCI:     mapaHijosCCI[nombre] || "No"
       };
     });
   }
 
-  // Leer FACTURACION
-  var hojaF = ss.getSheetByName(CFG.HOJAS.FACTURACION);
+  // Leer todos los periodos (PERIODOS) y recorrer cada pestaña de reporte de
+  // quincena — es la fuente real de montos (la misma que usa
+  // registrarPagosQuincena), no la hoja FACTURACION que ya no está en uso.
   var filasExport = [];
-  var nombresConFacturacion = {};
+  var periodosSinDatos = []; // periodos cerrados sin captura previa (irrecuperables)
+  var hPeriodosExp = ss.getSheetByName(CFG.HOJAS.PERIODOS);
+  if (hPeriodosExp && hPeriodosExp.getLastRow() > 1) {
+    var periodosExp = hPeriodosExp.getRange(2, 1, hPeriodosExp.getLastRow() - 1, 7).getValues();
+    periodosExp.forEach(function(per) {
+      var labelExp = String(per[1] || "").trim(); // col B = Período (solo para el aviso)
+      var tabNombreExp = String(per[6] || "").trim(); // col G = Tab_Reporte
+      var fecIniExp = new Date(per[2]); // col C = Fecha_Inicio
+      var mesTexto  = "", anioTexto = "", quincTexto = "";
+      if (!isNaN(fecIniExp)) {
+        mesTexto  = CFG.MESES[fecIniExp.getMonth()];
+        anioTexto = String(fecIniExp.getFullYear());
+        quincTexto = fecIniExp.getDate() >= 20 ? "1" : "2";
+      }
+      var clavePeriodo  = mesTexto + "|" + anioTexto + "|" + quincTexto;
+      var fechaQuincExp = _fechaDeQuincenaExport_(mesTexto, anioTexto, quincTexto);
 
-  if (hojaF && hojaF.getLastRow() > 1) {
-    // Leer bonos
-    var mapaBonosF = {};
-    var hBonos = ss.getSheetByName("Bonos");
-    if (hBonos && hBonos.getLastRow() > 1) {
-      hBonos.getRange(2, 1, hBonos.getLastRow() - 1, hBonos.getLastColumn()).getValues().forEach(function(b) {
-        var nombre = String(b[2] || "").trim();
-        var monto  = parseFloat(b[3]) || 0;
-        if (nombre && monto) {
-          mapaBonosF[nombre] = (mapaBonosF[nombre] || 0) + monto;
+      var hRep = tabNombreExp ? ss.getSheetByName(tabNombreExp) : null;
+
+      if (hRep && hRep.getLastRow() >= 4) {
+        // Pestaña todavía existe — recalcular fresco desde el reporte real.
+        var repDataExp = hRep.getDataRange().getValues();
+        for (var ri = 3; ri < repDataExp.length; ri++) {
+          var row = repDataExp[ri];
+          var numFilaExp = row[0];
+          if (!numFilaExp || isNaN(Number(numFilaExp))) continue; // salta subtotales/totales
+          var nombreExp = String(row[1] || "").trim();
+          if (!nombreExp) continue;
+
+          var idExp     = String(row[3]  || "").trim();
+          var horasExp  = parseFloat(row[5])  || 0;  // F = Total hrs
+          var baseExp   = parseFloat(row[8])  || 0;  // I = Monto Base
+          var ivaExp    = parseFloat(row[9])  || 0;  // J = IVA 5%
+          var bonoExp   = parseFloat(row[10]) || 0;  // K = Bono
+          var estipExp  = parseFloat(row[11]) || 0;  // L = Estipendio
+          var totalExp  = parseFloat(row[12]) || 0;  // M = Total org paga
+          var netoExp   = parseFloat(row[14]) || 0;  // O = Neto part.
+          if (totalExp <= 0 && horasExp <= 0) continue; // fila sin actividad real
+
+          var p = mapaParticipantes[nombreExp] || {
+            id: idExp, proyecto: "", programa: "", etapa: "", categoria: "",
+            tarifa: 0, tieneFactura: "", banco: "", formaPago: "",
+            hijosCCI: mapaHijosCCI[nombreExp] || "No"
+          };
+
+          filasExport.push([
+            p.id || idExp, nombreExp, p.proyecto, p.programa, p.etapa, p.categoria,
+            p.tarifa, p.tieneFactura, p.banco, p.formaPago, p.hijosCCI,
+            mesTexto, anioTexto, quincTexto, fechaQuincExp, horasExp, baseExp,
+            ivaExp, totalExp, netoExp, estipExp, bonoExp, hoy,
+            "mi-eelo", totalExp, horasExp
+          ]);
         }
-      });
-    }
-
-    hojaF.getDataRange().getValues().slice(1).forEach(function(f) {
-      var nombre = String(f[1] || "").trim();
-      if (!nombre) return;
-      nombresConFacturacion[nombre] = true;
-
-      var p = mapaParticipantes[nombre] || {
-        id: String(f[0] || "").trim(),
-        proyecto: "", programa: "", etapa: "", categoria: "",
-        tarifa: parseFloat(f[8]) || 0, tieneFactura: String(f[10] || ""),
-        banco: "", formaPago: "", hijosCCI: mapaHijosCCI[nombre] || "No", estipendio: 0
-      };
-
-      var mes      = String(f[2] || "").trim();
-      var anioFila = String(f[3] || "").trim();
-      var quincena = String(f[4] || "").trim();
-      var hrsTrab  = parseFloat(f[5]) || 0;
-      var base     = parseFloat(f[9]) || 0;
-      var iva      = parseFloat(f[11]) || 0;
-      var totalOrg = parseFloat(f[12]) || 0;
-      var neto     = parseFloat(f[13]) || 0;
-      var bono     = mapaBonosF[nombre] || 0;
-
-      filasExport.push([
-        p.id, nombre, p.proyecto, p.programa, p.etapa, p.categoria,
-        p.tarifa, p.tieneFactura, p.banco, p.formaPago, p.hijosCCI,
-        mes, anioFila, quincena, _fechaDeQuincenaExport_(mes, anioFila, quincena), hrsTrab, base,
-        iva, totalOrg, neto, p.estipendio, bono, hoy,
-        "mi-eelo", totalOrg, hrsTrab
-      ]);
+      } else if (filasPreviasPorPeriodo[clavePeriodo]) {
+        // Pestaña ya no existe (quincena cerrada) — conservar lo capturado antes.
+        filasExport = filasExport.concat(filasPreviasPorPeriodo[clavePeriodo]);
+      } else if (mesTexto) {
+        // Cerrada y nunca se exportó mientras existía la pestaña — irrecuperable.
+        periodosSinDatos.push(labelExp || clavePeriodo);
+      }
     });
   }
-
-  // Participantes sin facturación — incluir con valores 0
-  Object.keys(mapaParticipantes).forEach(function(nombre) {
-    if (nombresConFacturacion[nombre]) return;
-    var p = mapaParticipantes[nombre];
-    filasExport.push([
-      p.id, nombre, p.proyecto, p.programa, p.etapa, p.categoria,
-      p.tarifa, p.tieneFactura, p.banco, p.formaPago, p.hijosCCI,
-      "", "", "", "", 0, 0, 0, 0, 0, p.estipendio, 0, hoy,
-      "mi-eelo", 0, 0
-    ]);
-  });
 
   // Escribir en hoja
   hExp.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
@@ -8297,7 +8317,19 @@ function exportarParaPowerBI() { _run(function() {
   }
 
   var totalFilas = filasExport.length;
-  ss.toast("✅ PowerBI_Export actualizado — " + totalFilas + " filas", "📤", 5);
+  if (periodosSinDatos.length > 0) {
+    _alert(
+      "✅ PowerBI_Export actualizado — " + totalFilas + " filas.\n\n" +
+      "⚠️ " + periodosSinDatos.length + " período(s) cerrado(s) sin datos capturados " +
+      "(su pestaña de reporte ya no existe y nunca se exportó a PowerBI mientras existía):\n\n" +
+      periodosSinDatos.join("\n") +
+      "\n\nDesde ahora, corre '📤 Exportar para PowerBI' ANTES de cerrar cada quincena " +
+      "(o activa que se ejecute junto con 'Registrar pagos de quincena') para no perder " +
+      "el detalle de futuros periodos."
+    );
+  } else {
+    ss.toast("✅ PowerBI_Export actualizado — " + totalFilas + " filas", "📤", 5);
+  }
 }); }
 
 // ── Dimensión Participantes para Power BI ──────────────────────────────────
