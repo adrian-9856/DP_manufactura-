@@ -22,10 +22,16 @@ const SHEET_PROGRAMAS      = "Programas_Participacion";
 const SHEET_HISTORIAL_PAGOS= "Historial_Pagos";
 const SHEET_ARCHIVO_REC    = "Archivo_Recepciones";
 const SHEET_CATALOGO_PROD  = "Catálogo_Productos";
+const SHEET_AUX_COSTURA    = "Auxiliar de Costura";
 
 // ── Google Sheets externos ─────────────────────────────────────────────────────
 const SS_ID_WOMEN_PAYMENT  = "1e3zlQQ827h_uXGE-0GryvpPs7r7kki0c6wcmc_jzIHk"; // Women Payment 26 (Transferencias)
 const SS_ID_CHEQUES_EXT    = "14yNGv0ce8heGSeJ5L4EnUQFryJfF1n3NeTT3FUky02M"; // Cheques externo
+
+// ── KoboToolbox ────────────────────────────────────────────────────────────────
+const KOBO_URL_COSTURA         = "https://kf.kobotoolbox.org/api/v2/assets/agi395bJj6ojXJzPPDT9n6/export-settings/esFyGoVugvB2pNtpgngLSGD/data.csv";
+const PROP_KOBO_TOKEN          = "KOBO_TOKEN";
+const PROP_KOBO_LAST_ID_COSTURA= "KOBO_LAST_ID_COSTURA";
 const SHEET_REF_CREAMOS    = "Copy of Copy of CREAMOS ID nuevo"; // Hoja oculta de referencia
 
 const HEADER_ROW     = 4;
@@ -86,6 +92,7 @@ function onOpen() {
       .addItem("📅 Cerrar quincena actual",         "cerrarQuincenaActual")
       .addItem("🗃️ Cerrar mes manualmente",         "cerrarMes")
       .addItem("📤 Reenviar quincena a hojas externas", "reenviarQuincenaExternas")
+      .addItem("🧵 Importar Auxiliar de Costura",    "importarAuxiliarCostura")
       .addSeparator()
       // — Mantenimiento —
       .addItem("🔢 Reparar montos y totales",       "repararRedondeoMontos")
@@ -3638,4 +3645,225 @@ function _guardarHistorico_(tipo, valor) {
     lista = lista.slice(0, 20);
     props.setProperty(key, JSON.stringify(lista));
   }
+}
+
+// ========================= AUXILIAR DE COSTURA (KOBO) =========================
+
+function _setupAuxiliarCostura_(sh) {
+  sh.clear(); sh.clearFormats();
+  const HDR = ["#", "Fecha", "Participante", "Entrada", "Salida", "Horas", "Quincena"];
+  sh.getRange(1, 1, 1, HDR.length)
+    .setValues([HDR])
+    .setBackground("#4a148c").setFontColor("#ffffff")
+    .setFontWeight("bold").setHorizontalAlignment("center");
+  sh.setFrozenRows(1);
+  sh.setRowHeight(1, 28);
+  [45, 90, 230, 80, 80, 80, 160].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+  sh.getRange("A2:G1000").setBackground("#ffffff");
+}
+
+function importarAuxiliarCostura() {
+  const ss    = SpreadsheetApp.getActive();
+  const ui    = SpreadsheetApp.getUi();
+  const props = PropertiesService.getScriptProperties();
+  const tz    = Session.getScriptTimeZone();
+
+  // — Token —
+  let token = props.getProperty(PROP_KOBO_TOKEN);
+  if (!token) {
+    const r = ui.prompt(
+      "🔑 Token KoboToolbox",
+      "Ingresa tu token de API de KoboToolbox.\n(Solo se pide una vez, se guarda de forma segura).",
+      ui.ButtonSet.OK_CANCEL
+    );
+    if (r.getSelectedButton() !== ui.Button.OK) return;
+    token = r.getResponseText().trim();
+    if (!token) return ui.alert("Token requerido.");
+    props.setProperty(PROP_KOBO_TOKEN, token);
+  }
+
+  // — Crear hoja si no existe —
+  let sh = ss.getSheetByName(SHEET_AUX_COSTURA);
+  if (!sh) { sh = ss.insertSheet(SHEET_AUX_COSTURA); _setupAuxiliarCostura_(sh); }
+
+  // — Descargar CSV de Kobo —
+  let csvText;
+  try {
+    const res = UrlFetchApp.fetch(KOBO_URL_COSTURA, {
+      headers: { Authorization: "Token " + token },
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() === 401) {
+      props.deleteProperty(PROP_KOBO_TOKEN);
+      return ui.alert("❌ Token inválido o expirado. Se eliminó — vuelve a correr para ingresar uno nuevo.");
+    }
+    if (res.getResponseCode() !== 200) {
+      return ui.alert("❌ Error " + res.getResponseCode() + ":\n" + res.getContentText().substring(0, 300));
+    }
+    csvText = res.getContentText();
+  } catch (e) { return ui.alert("❌ Error de red: " + e.message); }
+
+  // — Parsear CSV —
+  const rows = Utilities.parseCsv(csvText);
+  if (rows.length < 2) { ss.toast("Sin datos en Kobo.", null, 3); return; }
+  const hdrs = rows[0].map(h => h.trim());
+  const hi = {};
+  hdrs.forEach((h, i) => hi[h] = i);
+
+  const iId   = hi["_id"];
+  const iSt   = hi["start"];
+  const iIE   = hi["Ingreso_Egreso"];
+  const iDest = hi["Destino"];
+  const iPart = hi["Participante"];
+
+  if ([iId, iSt, iIE, iDest, iPart].some(x => x === undefined)) {
+    return ui.alert("Columnas no encontradas en el CSV de Kobo.\n" +
+      "Disponibles: " + hdrs.slice(0, 15).join(", ") +
+      "\nEsperadas: _id, start, Ingreso_Egreso, Destino, Participante");
+  }
+
+  // — Filtrar nuevos registros de Manufactura —
+  const lastId = parseInt(props.getProperty(PROP_KOBO_LAST_ID_COSTURA) || "0") || 0;
+  let maxId = lastId;
+
+  // entradas/salidas: "part||dd/MM/yyyy" -> Date (earliest entrada, latest salida)
+  const entradas = {};
+  const salidas  = {};
+
+  for (let i = 1; i < rows.length; i++) {
+    const r  = rows[i];
+    const id = parseInt(r[iId]) || 0;
+    maxId = Math.max(maxId, id);
+    if (id <= lastId) continue;
+
+    const dest = String(r[iDest] || "").trim().toLowerCase();
+    if (!dest.includes("manufactura")) continue;
+
+    let dt;
+    try { dt = new Date(r[iSt]); } catch (e) { continue; }
+    if (!dt || isNaN(dt.getTime())) continue;
+
+    const part    = String(r[iPart] || "").trim();
+    if (!part) continue;
+    const dateStr = Utilities.formatDate(dt, tz, "dd/MM/yyyy");
+    const key     = part + "||" + dateStr;
+    const ie      = String(r[iIE] || "").trim().toUpperCase();
+    const isEnt   = ie === "ENTRADA" || ie.includes("ENTRADA");
+    const isSal   = ie === "SALIDA"  || ie.includes("SALIDA");
+
+    if (isEnt) {
+      if (!entradas[key] || dt < entradas[key]) entradas[key] = dt;
+    } else if (isSal) {
+      if (!salidas[key]  || dt > salidas[key])  salidas[key]  = dt;
+    }
+  }
+
+  if (maxId > lastId) props.setProperty(PROP_KOBO_LAST_ID_COSTURA, String(maxId));
+
+  const allKeys = new Set([...Object.keys(entradas), ...Object.keys(salidas)]);
+  if (!allKeys.size) { ss.toast("✅ Sin registros nuevos de Manufactura.", null, 4); return; }
+
+  // — Leer filas pendientes del sheet (Entrada sin Salida, fondo amarillo) —
+  // pending: "part||dd/MM/yyyy" -> { sheetRow, entradaDt }
+  const pending = {};
+  if (sh.getLastRow() > 1) {
+    const existData = sh.getRange(2, 1, sh.getLastRow() - 1, 7).getValues();
+    existData.forEach((row, idx) => {
+      const entStr = String(row[3] || "").trim();
+      const salStr = String(row[4] || "").trim();
+      const part   = String(row[2] || "").trim();
+      const rawDate = row[1];
+      if (!entStr || salStr || !part) return;
+
+      const dateStr = rawDate instanceof Date
+        ? Utilities.formatDate(rawDate, tz, "dd/MM/yyyy")
+        : String(rawDate || "").trim();
+      if (!dateStr) return;
+
+      const mT = entStr.match(/^(\d{1,2}):(\d{2})$/);
+      const mD = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (!mT || !mD) return;
+
+      const entDt = new Date(parseInt(mD[3]), parseInt(mD[2]) - 1, parseInt(mD[1]),
+                             parseInt(mT[1]), parseInt(mT[2]), 0);
+      pending[part + "||" + dateStr] = { sheetRow: idx + 2, entradaDt: entDt };
+    });
+  }
+
+  // — Escribir resultados —
+  let newCount = 0, updCount = 0;
+
+  allKeys.forEach(key => {
+    const [part, dateStr] = key.split("||");
+    const entDt = entradas[key];
+    const salDt = salidas[key];
+
+    // Calcular quincena
+    const mD = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    const dateObj = mD
+      ? new Date(parseInt(mD[3]), parseInt(mD[2]) - 1, parseInt(mD[1]))
+      : new Date();
+    const quincena = _getQuincenaForDate_(ss, dateObj);
+
+    if (entDt && salDt) {
+      // Par completo — nueva fila
+      const horas = Math.round(((salDt - entDt) / 3600000) * 100) / 100;
+      _writeAuxCosturaRow_(sh, dateStr, part,
+        Utilities.formatDate(entDt, tz, "HH:mm"),
+        Utilities.formatDate(salDt, tz, "HH:mm"),
+        horas, quincena, false);
+      newCount++;
+
+    } else if (entDt && !salDt) {
+      // Solo Entrada — fila pendiente en amarillo
+      _writeAuxCosturaRow_(sh, dateStr, part,
+        Utilities.formatDate(entDt, tz, "HH:mm"),
+        "", "", quincena, true);
+      newCount++;
+
+    } else if (!entDt && salDt) {
+      // Solo Salida nueva — completar fila pendiente si existe
+      if (pending[key]) {
+        const { sheetRow, entradaDt } = pending[key];
+        const salidaFmt = Utilities.formatDate(salDt, tz, "HH:mm");
+        const horas = Math.round(((salDt - entradaDt) / 3600000) * 100) / 100;
+        sh.getRange(sheetRow, 5).setValue(salidaFmt);
+        sh.getRange(sheetRow, 6).setValue(horas).setNumberFormat("0.00");
+        // Quitar amarillo cuando se completa
+        sh.getRange(sheetRow, 1, 1, 7).setBackground(sheetRow % 2 === 0 ? "#f5f5f5" : "#ffffff");
+        updCount++;
+      }
+      // Salida sin Entrada conocida → se ignora
+    }
+  });
+
+  const msg = newCount + " fila(s) nueva(s)" + (updCount ? ", " + updCount + " completada(s)" : "") + ".";
+  ss.toast("✅ " + msg, null, 5);
+}
+
+function _writeAuxCosturaRow_(sh, dateStr, part, entFmt, salFmt, horas, quincena, pending) {
+  const nr  = sh.getLastRow() + 1;
+  sh.getRange(nr, 1, 1, 7).setValues([[nr - 1, dateStr, part, entFmt, salFmt, horas || "", quincena]]);
+  if (horas) sh.getRange(nr, 6).setNumberFormat("0.00");
+  sh.getRange(nr, 1, 1, 7)
+    .setBackground(pending ? "#fff9c4" : (nr % 2 === 0 ? "#f5f5f5" : "#ffffff"));
+}
+
+function _getQuincenaForDate_(ss, date) {
+  const tz  = Session.getScriptTimeZone();
+  const shP = ss.getSheetByName(SHEET_PERIODOS);
+  if (shP && shP.getLastRow() > 1) {
+    const data = shP.getRange(2, 1, shP.getLastRow() - 1, 6).getValues();
+    for (const r of data) {
+      const ini = r[2] instanceof Date ? new Date(r[2].getTime()) : null;
+      const fin = r[3] instanceof Date ? new Date(r[3].getTime()) : null;
+      if (!ini || !fin) continue;
+      ini.setHours(0, 0, 0, 0); fin.setHours(23, 59, 59, 999);
+      if (date >= ini && date <= fin) return String(r[1] || "").trim();
+    }
+  }
+  // Fallback: Q1 días 1-15, Q2 días 16-fin
+  const day = parseInt(Utilities.formatDate(date, tz, "d"));
+  const mes = Utilities.formatDate(date, tz, "MMMM yyyy");
+  return (day <= 15 ? "Q1" : "Q2") + " — " + mes;
 }
