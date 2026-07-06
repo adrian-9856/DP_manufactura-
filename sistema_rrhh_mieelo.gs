@@ -8153,9 +8153,22 @@ function exportarParaPowerBI() { _run(function() {
     "IVA","Total_Org_Paga","Neto_Participante","Estipendio","Bono","Fecha_Export"
   ];
 
+  // Leer HijosCCI — mapa nombre → "Sí (N)" / "No"
+  var mapaHijosCCI = {};
+  var hHC = ss.getSheetByName("HijosCCI");
+  if (hHC && hHC.getLastRow() > 1) {
+    hHC.getRange(2, 1, hHC.getLastRow() - 1, 4).getValues().forEach(function(r) {
+      var nombreHC = String(r[1] || "").trim(); // col B = Participante
+      if (!nombreHC) return;
+      var tieneHC  = String(r[2] || "").trim().toUpperCase() === "X"; // col C = ¿Tiene hijos en CCI?
+      var cantHC   = parseFloat(r[3]) || 0; // col D = ¿Cuántos?
+      mapaHijosCCI[nombreHC] = tieneHC ? ("Sí" + (cantHC > 0 ? " (" + cantHC + ")" : "")) : "No";
+    });
+  }
+
   // Leer PARTICIPANTES
   var hP = ss.getSheetByName(CFG.HOJAS.PARTICIPANTES);
-  var mapaParticipantes = {}; // nombre → {id,proyecto,programa,etapa,categoria,tarifa,tieneFactura,banco,formaPago,estipendio}
+  var mapaParticipantes = {}; // nombre → {id,proyecto,programa,etapa,categoria,tarifa,tieneFactura,banco,formaPago,hijosCCI,estipendio}
   if (hP && hP.getLastRow() > 1) {
     hP.getRange(2, 1, hP.getLastRow() - 1, 19).getValues().forEach(function(r) {
       var nombre = String(r[1] || "").trim();
@@ -8170,6 +8183,7 @@ function exportarParaPowerBI() { _run(function() {
         tieneFactura: String(r[10] || "").trim(),
         banco:        String(r[14] || "").trim(),
         formaPago:    String(r[17] || "").trim(),
+        hijosCCI:     mapaHijosCCI[nombre] || "No",
         estipendio:   0
       };
     });
@@ -8203,7 +8217,7 @@ function exportarParaPowerBI() { _run(function() {
         id: String(f[0] || "").trim(),
         proyecto: "", programa: "", etapa: "", categoria: "",
         tarifa: parseFloat(f[8]) || 0, tieneFactura: String(f[10] || ""),
-        banco: "", formaPago: "", hijosCCI: "", estipendio: 0
+        banco: "", formaPago: "", hijosCCI: mapaHijosCCI[nombre] || "No", estipendio: 0
       };
 
       var mes      = String(f[2] || "").trim();
