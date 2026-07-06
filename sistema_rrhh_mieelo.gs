@@ -8340,7 +8340,14 @@ function exportarParaPowerBI() { _run(function() {
         }
       } else if (filasPreviasPorPeriodo[clavePeriodo]) {
         // Pestaña ya no existe (quincena cerrada) — conservar lo capturado antes.
-        filasExport = filasExport.concat(filasPreviasPorPeriodo[clavePeriodo]);
+        // Si esas filas vienen de un export con menos columnas (esquema viejo),
+        // se rellenan al final con "" para que coincidan con HEADERS.length y
+        // no truene el setValues por número de columnas distinto.
+        filasPreviasPorPeriodo[clavePeriodo].forEach(function(filaVieja) {
+          var filaCompleta = filaVieja.slice(0, HEADERS.length);
+          while (filaCompleta.length < HEADERS.length) filaCompleta.push("");
+          filasExport.push(filaCompleta);
+        });
       } else if (mesTexto) {
         // Cerrada y nunca se exportó mientras existía la pestaña — irrecuperable.
         periodosSinDatos.push(labelExp || clavePeriodo);
