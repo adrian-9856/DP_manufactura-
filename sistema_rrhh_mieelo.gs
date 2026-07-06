@@ -417,33 +417,17 @@ function _recalcularFilaReponer_(sheet, fila) {
  * onEdit INSTALABLE — maneja status de pagos (Cheques/Transferencias).
  * Necesita trigger instalable (configurarTriggers) para usar MailApp y UI.
  */
+// DESACTIVADO A PROPÓSITO: antes, cambiar manualmente el Status a "Cobrado" o
+// "Transferencias Subidas" disparaba automáticamente un correo y archivaba la
+// hoja. Eso ya no debe pasar — el único aviso por correo ahora es el que se
+// envía desde _generarPagosQuincena_/registrarPagosQuincena() al registrar
+// los pagos, sin depender de tocar ningún desplegable. Se deja la función
+// vacía (no se borra) porque configurarTriggers() todavía instala el trigger
+// por nombre; si algún día se quiere retomar el archivado automático, la
+// lógica sigue disponible en _verificarYArchivarPagos() para llamarla manual
+// o volver a conectarla aquí.
 function onEditInstalable(e) {
-  try {
-    var sheet  = e.range.getSheet();
-    var nombre = sheet.getName();
-    var col    = e.range.getColumn();
-    var fila   = e.range.getRow();
-    if (fila < 2) return;
-
-    // CHEQUES — col K (Status=11) → "Cobrado"
-    if (nombre === "Cheques" && col === 11) {
-      var statusChq = String(e.range.getValue()).trim();
-      if (statusChq === "Cobrado") {
-        _verificarYArchivarPagos("Cheques");
-      }
-    }
-
-    // TRANSFERENCIAS — col M (Status=13) → "Transferencias Subidas"
-    if (nombre === "Transferencias" && col === 13) {
-      var statusTr = String(e.range.getValue()).trim();
-      if (statusTr === "Transferencias Subidas") {
-        _enviarEmailPago("Transferencias");
-        _verificarYArchivarPagos("Transferencias");
-      }
-    }
-  } catch(err) {
-    Logger.log("onEditInstalable error: " + err.message);
-  }
+  // Intencionalmente sin lógica — ver comentario arriba.
 }
 
 /**
@@ -512,6 +496,38 @@ function _enviarEmailPago(tipo) {
   try {
     MailApp.sendEmail({ to: dest, subject: asunto, body: cuerpo });
   } catch(e) { Logger.log("Email error: " + e.message); }
+}
+
+/**
+ * Avisa por correo (a CORREO_CHEQUES y CORREO_PLANILLA) que los pagos de una
+ * quincena ya quedaron registrados en las hojas Cheques y/o Transferencias.
+ * Se llama automáticamente al final de registrarPagosQuincena() — no depende
+ * de que alguien cambie manualmente un Status ni de tener el trigger
+ * instalable activo (corre con los permisos normales del menú).
+ */
+function _enviarEmailPagosRegistrados_(periodoLabel, nCheques, nTransferencias) {
+  if (nCheques > 0 && CFG.CORREO_CHEQUES) {
+    try {
+      MailApp.sendEmail({
+        to: CFG.CORREO_CHEQUES,
+        subject: "[" + CFG.ORG + "] Cheques listos — " + periodoLabel,
+        body: "Hola,\n\nSe registraron " + nCheques + " pago(s) por cheque de la quincena " +
+              periodoLabel + ".\n\nYa están disponibles en la hoja 'Cheques' del archivo de RRHH " +
+              CFG.ORG + " para su procesamiento.\n\nSaludos,\n" + CFG.ORG
+      });
+    } catch(e) { Logger.log("Email Cheques: " + e.message); }
+  }
+  if (nTransferencias > 0 && CFG.CORREO_PLANILLA) {
+    try {
+      MailApp.sendEmail({
+        to: CFG.CORREO_PLANILLA,
+        subject: "[" + CFG.ORG + "] Transferencias listas — " + periodoLabel,
+        body: "Hola,\n\nSe registraron " + nTransferencias + " pago(s) por transferencia de la quincena " +
+              periodoLabel + ".\n\nYa están disponibles en la hoja 'Transferencias' del archivo de RRHH " +
+              CFG.ORG + " para su procesamiento.\n\nSaludos,\n" + CFG.ORG
+      });
+    } catch(e) { Logger.log("Email Transferencias: " + e.message); }
+  }
 }
 
 /** Sincroniza la fila de DiasEstudio hacia col F (Educacion=6) de PARTICIPANTES */
@@ -2023,6 +2039,11 @@ function registrarPagosQuincena() { _run(function() {
   if (erroresPago.length > 0) {
     msg += "\n\n⚠️ Avisos:\n" + erroresPago.join("\n");
   }
+
+  // ── Paso 8a: Avisar por correo que los pagos ya están en Cheques/Transferencias ──
+  try {
+    _enviarEmailPagosRegistrados_(labelPeriodo + " (" + quincenaLabel + ")", nCheques, nTransferencias);
+  } catch (eEmail) { Logger.log("_enviarEmailPagosRegistrados_: " + eEmail.message); }
 
   // ── Paso 8b: Capturar a PowerBI_Export ANTES de que la pestaña del reporte
   // se borre en el cierre de Q2 (_cerrarPeriodoQ2 elimina esa hoja del Sheet).

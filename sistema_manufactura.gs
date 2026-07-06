@@ -6,6 +6,10 @@
 
 const NOMBRE_PROGRAMA = "NOMBRE DEL PROGRAMA";
 
+// ── Correos de aviso (cambiar por el correo real de cada encargado/a) ──────────
+const CORREO_CHEQUES        = "adrian@creamosguatemala.org"; // encargado/a de cheques — cambiar cuando esté listo
+const CORREO_TRANSFERENCIAS = "adrian@creamosguatemala.org"; // encargado/a de transferencias — cambiar cuando esté listo
+
 // ── Hojas del sistema ─────────────────────────────────────────────────────────
 const SHEET_RECEPCIONES    = "Recepciones";
 const SHEET_CATALOGOS      = "Participantes Activos";
@@ -2918,11 +2922,13 @@ function _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ) {
   const esQ1 = ordenQ === "Q1";
 
   // — Hojas internas (Cheques / Transferencias) — agrupadas por participante
+  let nCheques = 0, nTransferencias = 0;
   for (const [nombre, monto] of Object.entries(totales)) {
     if (monto <= 0) continue;
     const info  = infoPart[nombre] || {};
     const esChq = (info.tipoCuenta || "").toLowerCase() === "cheque";
     const sh    = esChq ? shC : shT;
+    if (esChq) nCheques++; else nTransferencias++;
 
     if (esQ1) {
       const newRow = sh.getLastRow() + 1;
@@ -2960,6 +2966,37 @@ function _generarPagosQuincena_(ss, ordenQ, fechaFin, nombreQ) {
     _enviarPagosExterno_(desglose, infoPart, ordenQ, mes);
   } catch (e) {
     SpreadsheetApp.getActive().toast("⚠️ Hojas internas OK. Error al escribir hojas externas: " + e.message, null, 6);
+  }
+
+  // — Avisar por correo que los pagos ya están en Cheques/Transferencias —
+  // Único disparador: se registraron pagos. No depende de ningún desplegable
+  // ni cambia ningún Status — solo notifica.
+  try {
+    _enviarEmailPagosRegistrados_(nombreQ, nCheques, nTransferencias);
+  } catch (e) {
+    SpreadsheetApp.getActive().toast("⚠️ Pagos OK. Error al enviar correo: " + e.message, null, 6);
+  }
+}
+
+// Envía el aviso de "pagos listos" a los encargados de Cheques y Transferencias.
+// Se llama únicamente desde _generarPagosQuincena_ (al registrar pagos de una
+// quincena) — no reacciona a cambios de Status ni a ningún desplegable.
+function _enviarEmailPagosRegistrados_(nombreQ, nCheques, nTransferencias) {
+  if (nCheques > 0 && CORREO_CHEQUES) {
+    MailApp.sendEmail({
+      to: CORREO_CHEQUES,
+      subject: "[Manufactura] Cheques listos — " + nombreQ,
+      body: "Hola,\n\nSe registraron " + nCheques + " pago(s) por cheque de la quincena " + nombreQ +
+            ".\n\nYa están disponibles en la hoja 'Cheques' del sistema de Manufactura para su procesamiento.\n\nSaludos."
+    });
+  }
+  if (nTransferencias > 0 && CORREO_TRANSFERENCIAS) {
+    MailApp.sendEmail({
+      to: CORREO_TRANSFERENCIAS,
+      subject: "[Manufactura] Transferencias listas — " + nombreQ,
+      body: "Hola,\n\nSe registraron " + nTransferencias + " pago(s) por transferencia de la quincena " + nombreQ +
+            ".\n\nYa están disponibles en la hoja 'Transferencias' del sistema de Manufactura para su procesamiento.\n\nSaludos."
+    });
   }
 }
 
