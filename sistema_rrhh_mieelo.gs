@@ -8148,10 +8148,12 @@ function exportarParaPowerBI() { _run(function() {
 
   // Encabezados
   var HEADERS = [
-    "Creamos_ID","Nombre","Proyecto","Programa","Etapa","Categoria",
+    "Creamos_ID","Participante","Proyecto","Programa","Etapa","Categoria",
     "Tarifa_Hora","Tiene_Factura","Banco","Forma_Pago","Hijos_CCI",
     "Mes","Año","Quincena","Fecha","Horas_Trabajadas","Monto_Base",
-    "IVA","Total_Org_Paga","Neto_Participante","Estipendio","Bono","Fecha_Export"
+    "IVA","Total_Org_Paga","Neto_Participante","Estipendio","Bono","Fecha_Export",
+    // ── Columnas comunes (esquema compartido con sistema_manufactura.gs) ──
+    "Sistema","Monto","Horas"
   ];
 
   // Convierte Mes(texto)+Año+Quincena en una fecha real para conectar con
@@ -8245,7 +8247,8 @@ function exportarParaPowerBI() { _run(function() {
         p.id, nombre, p.proyecto, p.programa, p.etapa, p.categoria,
         p.tarifa, p.tieneFactura, p.banco, p.formaPago, p.hijosCCI,
         mes, anioFila, quincena, _fechaDeQuincenaExport_(mes, anioFila, quincena), hrsTrab, base,
-        iva, totalOrg, neto, p.estipendio, bono, hoy
+        iva, totalOrg, neto, p.estipendio, bono, hoy,
+        "mi-eelo", totalOrg, hrsTrab
       ]);
     });
   }
@@ -8257,7 +8260,8 @@ function exportarParaPowerBI() { _run(function() {
     filasExport.push([
       p.id, nombre, p.proyecto, p.programa, p.etapa, p.categoria,
       p.tarifa, p.tieneFactura, p.banco, p.formaPago, p.hijosCCI,
-      "", "", "", "", 0, 0, 0, 0, 0, p.estipendio, 0, hoy
+      "", "", "", "", 0, 0, 0, 0, 0, p.estipendio, 0, hoy,
+      "mi-eelo", 0, 0
     ]);
   });
 
@@ -8279,8 +8283,8 @@ function exportarParaPowerBI() { _run(function() {
     hExp.getRange(2, 23, filasExport.length, 1).setNumberFormat("dd/MM/yyyy");
   }
 
-  // Formato columnas Q (cols 7=Tarifa, 17=Base, 18=IVA, 19=Total, 20=Neto, 21=Estipendio, 22=Bono)
-  var colsQ = [7, 17, 18, 19, 20, 21, 22];
+  // Formato columnas Q (cols 7=Tarifa, 17=Base, 18=IVA, 19=Total, 20=Neto, 21=Estipendio, 22=Bono, 25=Monto)
+  var colsQ = [7, 17, 18, 19, 20, 21, 22, 25];
   if (filasExport.length > 0) {
     colsQ.forEach(function(c) {
       hExp.getRange(2, c, filasExport.length, 1).setNumberFormat('"Q"#,##0.00');

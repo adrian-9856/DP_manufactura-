@@ -1368,13 +1368,14 @@ function _setupReportes_(sh) {
   sh.clear();
   sh.clearFormats();
 
-  sh.getRange("A1:N1").merge().setValue("REPORTES PARA POWER BI").setFontWeight("bold").setFontSize(12)
+  sh.getRange("A1:Q1").merge().setValue("REPORTES PARA POWER BI").setFontWeight("bold").setFontSize(12)
     .setBackground("#37474f").setFontColor("white").setHorizontalAlignment("center");
 
-  sh.getRange("A2:N2").setValues([[
-    "Fecha", "Mes", "Quincena", "Creamos ID", "Participante", "Producto", "Categoría", "Proyecto",
+  sh.getRange("A2:Q2").setValues([[
+    "Fecha", "Mes", "Quincena", "Creamos_ID", "Participante", "Producto", "Categoria", "Proyecto",
     "Unidades Buenas", "Unidades Rechazadas", "Tasa Rechazo %",
-    "Total a Pagar", "Estado Pago", "Días Pendiente"
+    "Total a Pagar", "Estado Pago", "Días Pendiente",
+    "Sistema", "Monto", "Horas"
   ]])
     .setFontWeight("bold").setBackground("#455a64").setFontColor("white")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
@@ -1386,6 +1387,7 @@ function _setupReportes_(sh) {
   sh.setColumnWidth(7, 130);  sh.setColumnWidth(8, 130);  sh.setColumnWidth(9,  110);
   sh.setColumnWidth(10, 130); sh.setColumnWidth(11, 110); sh.setColumnWidth(12, 110);
   sh.setColumnWidth(13, 150); sh.setColumnWidth(14, 110);
+  sh.setColumnWidth(15, 110); sh.setColumnWidth(16, 110); sh.setColumnWidth(17, 80);
 }
 
 // ── Mejora 1: PERIODOS ────────────────────────────────────────────────────────
@@ -2516,20 +2518,23 @@ function actualizarReportes() {
       categoria,
       String(r[m["proyecto / cliente"] - 1] || "").trim(),
       ub, ur, tasaRechazo, total, estado,
-      esPend ? dias : 0
+      esPend ? dias : 0,
+      // ── Columnas comunes (esquema compartido con sistema_rrhh_mieelo.gs) ──
+      "Manufactura", total, 0
     ]);
   }
 
-  dst.getRange("A3:N1000").clearContent();
+  dst.getRange("A3:Q1000").clearContent();
 
   if (reportes.length) {
-    dst.getRange(3, 1, reportes.length, 14).setValues(reportes);
-    dst.getRange(3, 1, reportes.length, 14)
+    dst.getRange(3, 1, reportes.length, 17).setValues(reportes);
+    dst.getRange(3, 1, reportes.length, 17)
       .setBackground("#ffffff").setFontColor("#212121")
       .setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
     dst.getRange(3, 1,  reportes.length, 1).setNumberFormat("yyyy-mm-dd");
     dst.getRange(3, 11, reportes.length, 1).setNumberFormat("0.00%");
     dst.getRange(3, 12, reportes.length, 1).setNumberFormat('"Q " #,##0.00');
+    dst.getRange(3, 16, reportes.length, 1).setNumberFormat('"Q " #,##0.00'); // Monto (común)
   }
 }
 
