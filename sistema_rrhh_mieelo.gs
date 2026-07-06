@@ -367,6 +367,50 @@ function onEdit(e) {
   // HIJOSCCI — datos propios de la hoja (no se reflejan en PARTICIPANTES, esquema 19 cols)
   // _syncHijosCCIFila es no-op, se conserva para compatibilidad
 
+  // REPORTE DE QUINCENA — al escribir "Hrs reponer" (col G=7), recalcular en
+  // vivo Total hrs a pagar, Monto Base, IVA, Total org paga y Neto part. de
+  // esa misma fila, sin tener que volver a correr "Ver/actualizar quincena".
+  if (nombre.indexOf("Q_") === 0 && col === 7 && fila >= 4) {
+    try { _recalcularFilaReponer_(sheet, fila); } catch(err) { Logger.log("Recalc Hrs reponer: " + err.message); }
+  }
+}
+
+/**
+ * Recalcula una fila del reporte de quincena cuando se edita "Hrs reponer" (col G).
+ * Mantiene la misma fórmula que _generarReporteQuincena: hTotal=horas+reponer,
+ * base=hTotal*tarifa, iva=tieneFactura?base*5%:0, orgPaga=base+iva+bono,
+ * neto=base+bono. Bono/Estipendio (cols K/L) no se tocan — no dependen de horas.
+ */
+function _recalcularFilaReponer_(sheet, fila) {
+  // Validar que sea una fila de datos real (col A trae el número de fila, no vacío/subtotal)
+  var numFila = sheet.getRange(fila, 1).getValue();
+  if (!numFila || isNaN(Number(numFila))) return;
+
+  var participante = String(sheet.getRange(fila, 2).getValue() || "").trim();
+  if (!participante) return;
+
+  var horas    = Number(sheet.getRange(fila, 6).getValue()) || 0;  // F = Total hrs
+  var hReponer = Number(sheet.getRange(fila, 7).getValue()) || 0;  // G = Hrs reponer
+  var bono     = Number(sheet.getRange(fila, 11).getValue()) || 0; // K = Bono
+
+  var mapaTarifas = _construirMapaTarifas();
+  var infoPart = _buscarInfoParticipante(mapaTarifas, participante);
+  var tarifa       = (infoPart && infoPart.tarifa)       || CFG.CATEGORIAS.C;
+  var tieneFactura = !!(infoPart && infoPart.tieneFactura);
+
+  var hTotal  = Math.round((horas + hReponer) * 100) / 100;
+  var base    = Math.round(hTotal * tarifa * 100) / 100;
+  var iva     = tieneFactura ? Math.round(base * CFG.IVA_PCT * 100) / 100 : 0;
+  var orgPaga = Math.round((base + iva + bono) * 100) / 100;
+  var redond  = Math.round(orgPaga);
+  var neto    = Math.round((base + bono) * 100) / 100;
+
+  sheet.getRange(fila, 8).setValue(hTotal || "");                 // H = Total hrs a pagar
+  sheet.getRange(fila, 9).setValue(base || "").setNumberFormat('"Q"#,##0.00');   // I = Monto Base
+  sheet.getRange(fila, 10).setValue(iva > 0 ? iva : "").setNumberFormat('"Q"#,##0.00'); // J = IVA 5%
+  sheet.getRange(fila, 13).setValue(orgPaga || "").setNumberFormat('"Q"#,##0.00'); // M = Total org paga
+  sheet.getRange(fila, 14).setValue(redond || "").setNumberFormat('"Q"#,##0.00');  // N = Redondeo
+  sheet.getRange(fila, 15).setValue(neto || "").setNumberFormat('"Q"#,##0.00');    // O = Neto part.
 }
 
 /**
@@ -613,11 +657,11 @@ function crearHojas() { _run(function() {
 
   // (CLASIFICACION eliminada — la info de categorías está en el Directorio)
 
-  // PARTICIPANTES — 23 cols (A–W)
+  // PARTICIPANTES — 24 cols (A–X)
   // A=Creamos_ID, B=Nombre, C=Fecha_Nacimiento, D=Edad, E=Genero, F=Ano_Entrada_Creamos,
   // G=Proyecto, H=Programa, I=Etapa, J=Educacion, K=Apoyo_Emocional, L=Inclusion_Laboral,
   // M=Categoria, N=Tarifa_Hora, O=Tiene_Factura, P=DPI, Q=NIT, R=Correo,
-  // S=Banco, T=Tipo_Cuenta, U=Num_Cuenta, V=Forma_Pago, W=URL_Doc_Proceso
+  // S=Banco, T=Tipo_Cuenta, U=Num_Cuenta, V=Forma_Pago, W=URL_Doc_Proceso, X=Cuenta_Pago
   var hP = ss.getSheetByName(CFG.HOJAS.PARTICIPANTES) || ss.insertSheet(CFG.HOJAS.PARTICIPANTES);
   var esNuevaP = hP.getLastRow() === 0;
   if (esNuevaP) {
@@ -627,8 +671,12 @@ function crearHojas() { _run(function() {
       "Educacion","Apoyo_Emocional","Inclusion_Laboral",
       "Categoria","Tarifa_Hora","Tiene_Factura",
       "DPI","NIT","Correo",
-      "Banco","Tipo_Cuenta","Num_Cuenta","Forma_Pago","URL_Doc_Proceso"
+      "Banco","Tipo_Cuenta","Num_Cuenta","Forma_Pago","URL_Doc_Proceso","Cuenta_Pago"
     ]);
+  }
+  // Agregar Cuenta_Pago (col X) a hojas ya existentes que aún no la tengan
+  if (!esNuevaP && String(hP.getRange(1, 24).getValue() || "").trim() !== "Cuenta_Pago") {
+    hP.getRange(1, 24).setValue("Cuenta_Pago");
   }
   _fmtEnc(hP, "#639922");
   var vEtapa   = SpreadsheetApp.newDataValidation().requireValueInList(["Inscritx","Retiradx","Empleadx","Ciclo de Vida Terminado"],true).build();
@@ -639,12 +687,14 @@ function crearHojas() { _run(function() {
   ],true).build();
   var vTipoCta = SpreadsheetApp.newDataValidation().requireValueInList(["Monetaria","Ahorro",""],true).build();
   var vPago    = SpreadsheetApp.newDataValidation().requireValueInList(["Transferencia","Cheque"],true).build();
+  var vCtaPago = SpreadsheetApp.newDataValidation().requireValueInList(["Creamos","mi-eelo"],true).build();
   hP.getRange("I2:I500").setDataValidation(vEtapa);   // col I = Etapa
   hP.getRange("M2:M500").setDataValidation(vCat);     // col M = Categoria
   hP.getRange("O2:O500").setDataValidation(vSiNo);    // col O = Tiene_Factura
   hP.getRange("S2:S500").setDataValidation(vBanco);   // col S = Banco
   hP.getRange("T2:T500").setDataValidation(vTipoCta); // col T = Tipo_Cuenta
   hP.getRange("V2:V500").setDataValidation(vPago);    // col V = Forma_Pago
+  hP.getRange(2, 24, 499, 1).setDataValidation(vCtaPago); // col X = Cuenta_Pago
   hP.getRange("N2:N500").setNumberFormat("Q#,##0.00"); // col N = Tarifa_Hora
   hP.getRange("C2:C500").setNumberFormat("dd/MM/yyyy"); // col C = Fecha_Nacimiento
   hP.getRange("P2:P500").setNumberFormat("@");          // col P = DPI (texto plano)
@@ -661,6 +711,7 @@ function crearHojas() { _run(function() {
     hP.setColumnWidth(21, 130); // Num_Cuenta
     hP.setColumnWidth(22, 120); // Forma_Pago
     hP.setColumnWidth(23, 300); // URL_Doc_Proceso
+    hP.setColumnWidth(24, 110); // Cuenta_Pago
   }
 
   // PERIODOS — hoja de control de quincenas
@@ -1735,7 +1786,7 @@ function registrarPagosQuincena() { _run(function() {
   //       O(15)=Banco, P(16)=Tipo_Cuenta, Q(17)=Num_Cuenta, R(18)=Forma_Pago
   var hP = _sh(CFG.HOJAS.PARTICIPANTES);
   if (hP.getLastRow() < 2) { _alert("PARTICIPANTES está vacía."); return; }
-  var datosP = hP.getRange(2, 1, hP.getLastRow() - 1, 22).getValues();
+  var datosP = hP.getRange(2, 1, hP.getLastRow() - 1, 24).getValues();
   // mapaPago indexado por: ID, nombre exacto y nombre normalizado
   var mapaPagoById   = {}; // {cremos_id: info}
   var mapaPagoByNorm = {}; // {nombre_normalizado: info}
@@ -1751,12 +1802,13 @@ function registrarPagosQuincena() { _run(function() {
     var tipoCuenta = String(r[19] || "").trim();  // col T = Tipo_Cuenta (idx 19)
     var numCuenta  = String(r[20] || "").trim();  // col U = Num_Cuenta (idx 20)
     var formaPago  = String(r[21] || "").trim();  // col V = Forma_Pago (idx 21)
+    var cuentaPago = String(r[23] || "").trim() || "mi-eelo"; // col X = Cuenta_Pago (idx 23)
 
     var servicio = "Textil"; // siempre Textil para el taller (uso interno — Women Payment 26 usa SERVICIO_EXTERNO por separado)
 
     var info = { formaPago: formaPago, banco: banco, tipoCuenta: tipoCuenta,
                  numCuenta: numCuenta, programa: programa, servicio: servicio,
-                 nombreOficial: nombre };
+                 cuentaPago: cuentaPago, nombreOficial: nombre };
     if (pid) mapaPagoById[pid] = info;
     mapaPagoByNorm[textoParaComparar(nombre)] = info;
   });
@@ -1818,7 +1870,6 @@ function registrarPagosQuincena() { _run(function() {
 
   // ── Paso 7: Enrutar pagos ─────────────────────────────────────
   var hoy = new Date();
-  var cuentaPago = "Cuenta mi eelo";
   var nCheques = 0, nTransferencias = 0;
   var erroresPago = [];
 
@@ -1866,7 +1917,7 @@ function registrarPagosQuincena() { _run(function() {
         var q1cNew = quincenaLabel === "Q1" ? monto : 0;
         var q2cNew = quincenaLabel === "Q2" ? monto : 0;
         var nuevaFilaChq = [nombreOficial, info.programa, mesNombre, anioNum,
-                            q1cNew, q2cNew, q1cNew + q2cNew, "", "", "", "Pendiente"];
+                            q1cNew, q2cNew, q1cNew + q2cNew, "", "", info.cuentaPago || "mi-eelo", "Pendiente"];
         hCheques.appendRow(nuevaFilaChq);
         var newRowChq = hCheques.getLastRow();
         hCheques.getRange(newRowChq, 5, 1, 3).setNumberFormat('"Q"#,##0.00');
@@ -1909,7 +1960,7 @@ function registrarPagosQuincena() { _run(function() {
         var q1new = quincenaLabel === "Q1" ? monto : 0;
         var q2new = quincenaLabel === "Q2" ? monto : 0;
         var nuevaFila = [nombreOficial, "Transferencia", info.servicio, info.banco,
-                         info.tipoCuenta, info.numCuenta, cuentaPago,
+                         info.tipoCuenta, info.numCuenta, info.cuentaPago || "mi-eelo",
                          q1new, q2new, q1new + q2new, mesNombre, anioNum, "Pendiente"];
         hTransf.appendRow(nuevaFila);
         var newRowT = hTransf.getLastRow();
@@ -1944,7 +1995,7 @@ function registrarPagosQuincena() { _run(function() {
         tipoCuenta: infoExt.tipoCuenta,
         numCuenta:  infoExt.numCuenta,
         formaPago:  infoExt.formaPago,
-        cuentaPago: "mi-eelo"
+        cuentaPago: infoExt.cuentaPago || "mi-eelo"
       };
     });
 
@@ -6518,22 +6569,30 @@ function repararDropdownsParticipantes() { _run(function() {
   var vBanco  = SpreadsheetApp.newDataValidation().requireValueInList(["Banrural","Industrial","BAC Credomatic","G&T Continental","Banco Azteca","N/A","Otro"],true).build();
   var vTipoCt = SpreadsheetApp.newDataValidation().requireValueInList(["Monetaria","Ahorro",""],true).build();
   var vPago   = SpreadsheetApp.newDataValidation().requireValueInList(["Transferencia","Cheque"],true).build();
+  var vCtaPago = SpreadsheetApp.newDataValidation().requireValueInList(["Creamos","mi-eelo"],true).build();
 
   if (es23) {
-    // 23 cols A–W
+    // Agregar columna X = Cuenta_Pago si no existe (append al final, sin desplazar nada)
+    if (String(hP.getRange(1, 24).getValue() || "").trim() !== "Cuenta_Pago") {
+      hP.getRange(1, 24).setValue("Cuenta_Pago")
+        .setBackground("#639922").setFontColor("#ffffff").setFontWeight("bold");
+      hP.setColumnWidth(24, 110);
+    }
+    // 24 cols A–X
     hP.getRange("I2:I500").setDataValidation(vEtapa);   // col I = Etapa
     hP.getRange("M2:M500").setDataValidation(vCat);     // col M = Categoria
     hP.getRange("O2:O500").setDataValidation(vSiNo);    // col O = Tiene_Factura
     hP.getRange("S2:S500").setDataValidation(vBanco);   // col S = Banco
     hP.getRange("T2:T500").setDataValidation(vTipoCt);  // col T = Tipo_Cuenta
     hP.getRange("V2:V500").setDataValidation(vPago);    // col V = Forma_Pago
+    hP.getRange(2, 24, 499, 1).setDataValidation(vCtaPago); // col X = Cuenta_Pago
     hP.getRange("N2:N500").setNumberFormat("Q#,##0.00"); // col N = Tarifa_Hora
     hP.getRange("C2:C500").setNumberFormat("dd/MM/yyyy"); // col C = Fecha_Nacimiento
     hP.getRange("P2:P500").setNumberFormat("@");          // col P = DPI (texto plano)
     hP.getRange("Q2:Q500").setNumberFormat("@");          // col Q = NIT (texto plano)
-    _alert("✅ Dropdowns reparados — esquema 23 cols (A–W):\n" +
+    _alert("✅ Dropdowns reparados — esquema 24 cols (A–X):\n" +
            "• I = Etapa\n• M = Categoría (A/B/C/D)\n• O = Tiene_Factura\n" +
-           "• S = Banco\n• T = Tipo_Cuenta\n• V = Forma_Pago\n• P = DPI (texto)");
+           "• S = Banco\n• T = Tipo_Cuenta\n• V = Forma_Pago\n• X = Cuenta_Pago (Creamos/mi-eelo)\n• P = DPI (texto)");
   } else {
     // 19 cols A–S
     hP.getRange("E2:E500").setDataValidation(vEtapa);   // col E = Etapa
