@@ -8167,7 +8167,8 @@ function exportarParaPowerBI() { _run(function() {
   var HEADERS = [
     "Creamos_ID","Participante","Proyecto","Programa","Etapa","Categoria",
     "Tarifa_Hora","Tiene_Factura","Banco","Forma_Pago","Hijos_CCI",
-    "Mes","Año","Quincena","Fecha","Horas_Trabajadas","Monto_Base",
+    "Mes","Año","Quincena","Fecha","Fecha_Inicio_Periodo","Fecha_Fin_Periodo",
+    "Horas_Trabajadas","Monto_Base",
     "IVA","Total_Org_Paga","Neto_Participante","Estipendio","Bono","Fecha_Export",
     // ── Columnas comunes (esquema compartido con sistema_manufactura.gs) ──
     "Sistema","Monto","Horas"
@@ -8230,6 +8231,7 @@ function exportarParaPowerBI() { _run(function() {
       var labelExp = String(per[1] || "").trim(); // col B = Período (solo para el aviso)
       var tabNombreExp = String(per[6] || "").trim(); // col G = Tab_Reporte
       var fecIniExp = new Date(per[2]); // col C = Fecha_Inicio
+      var fecFinExp = new Date(per[3]); // col D = Fecha_Fin
       var mesTexto  = "", anioTexto = "", quincTexto = "";
       if (!isNaN(fecIniExp)) {
         mesTexto  = CFG.MESES[fecIniExp.getMonth()];
@@ -8270,7 +8272,9 @@ function exportarParaPowerBI() { _run(function() {
           filasExport.push([
             p.id || idExp, nombreExp, p.proyecto, p.programa, p.etapa, p.categoria,
             p.tarifa, p.tieneFactura, p.banco, p.formaPago, p.hijosCCI,
-            mesTexto, anioTexto, quincTexto, fechaQuincExp, horasExp, baseExp,
+            mesTexto, anioTexto, quincTexto, fechaQuincExp,
+            isNaN(fecIniExp) ? "" : fecIniExp, isNaN(fecFinExp) ? "" : fecFinExp,
+            horasExp, baseExp,
             ivaExp, totalExp, netoExp, estipExp, bonoExp, hoy,
             "mi-eelo", totalExp, horasExp
           ]);
@@ -8297,14 +8301,14 @@ function exportarParaPowerBI() { _run(function() {
     .setFontWeight("bold");
   hExp.setFrozenRows(1);
 
-  // Formato columnas de fecha (col 15 = Fecha real de la quincena, col 23 = Fecha_Export)
+  // Formato columnas de fecha (15=Fecha anclada, 16=Inicio Periodo, 17=Fin Periodo, 25=Fecha_Export)
   if (filasExport.length > 0) {
-    hExp.getRange(2, 15, filasExport.length, 1).setNumberFormat("dd/MM/yyyy");
-    hExp.getRange(2, 23, filasExport.length, 1).setNumberFormat("dd/MM/yyyy");
+    hExp.getRange(2, 15, filasExport.length, 3).setNumberFormat("dd/MM/yyyy");
+    hExp.getRange(2, 25, filasExport.length, 1).setNumberFormat("dd/MM/yyyy");
   }
 
-  // Formato columnas Q (cols 7=Tarifa, 17=Base, 18=IVA, 19=Total, 20=Neto, 21=Estipendio, 22=Bono, 25=Monto)
-  var colsQ = [7, 17, 18, 19, 20, 21, 22, 25];
+  // Formato columnas Q (cols 7=Tarifa, 19=Base, 20=IVA, 21=Total, 22=Neto, 23=Estipendio, 24=Bono, 27=Monto)
+  var colsQ = [7, 19, 20, 21, 22, 23, 24, 27];
   if (filasExport.length > 0) {
     colsQ.forEach(function(c) {
       hExp.getRange(2, c, filasExport.length, 1).setNumberFormat('"Q"#,##0.00');

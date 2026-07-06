@@ -1368,14 +1368,15 @@ function _setupReportes_(sh) {
   sh.clear();
   sh.clearFormats();
 
-  sh.getRange("A1:Q1").merge().setValue("REPORTES PARA POWER BI").setFontWeight("bold").setFontSize(12)
+  sh.getRange("A1:S1").merge().setValue("REPORTES PARA POWER BI").setFontWeight("bold").setFontSize(12)
     .setBackground("#37474f").setFontColor("white").setHorizontalAlignment("center");
 
-  sh.getRange("A2:Q2").setValues([[
+  sh.getRange("A2:S2").setValues([[
     "Fecha", "Mes", "Quincena", "Creamos_ID", "Participante", "Producto", "Categoria", "Proyecto",
     "Unidades Buenas", "Unidades Rechazadas", "Tasa Rechazo %",
     "Total a Pagar", "Estado Pago", "Días Pendiente",
-    "Sistema", "Monto", "Horas"
+    "Sistema", "Monto", "Horas",
+    "Fecha Inicio Periodo", "Fecha Fin Periodo"
   ]])
     .setFontWeight("bold").setBackground("#455a64").setFontColor("white")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
@@ -1388,6 +1389,7 @@ function _setupReportes_(sh) {
   sh.setColumnWidth(10, 130); sh.setColumnWidth(11, 110); sh.setColumnWidth(12, 110);
   sh.setColumnWidth(13, 150); sh.setColumnWidth(14, 110);
   sh.setColumnWidth(15, 110); sh.setColumnWidth(16, 110); sh.setColumnWidth(17, 80);
+  sh.setColumnWidth(18, 130); sh.setColumnWidth(19, 130);
 }
 
 // ── Mejora 1: PERIODOS ────────────────────────────────────────────────────────
@@ -2478,8 +2480,20 @@ function actualizarReportes() {
   // nuevo automáticamente y el encabezado queda desalineado con los datos
   // que se escriben aquí. Reescribir el encabezado en cada corrida evita
   // ese desfase sin borrar los datos (que se rellenan de nuevo abajo).
-  if (dst && (dst.getRange("A2").getValue() !== "Fecha" || dst.getLastColumn() < 17)) {
+  if (dst && (dst.getRange("A2").getValue() !== "Fecha" || dst.getLastColumn() < 19)) {
     _setupReportes_(dst);
+  }
+
+  // Mapa Quincena → {inicio, fin} desde PERIODOS, para exponer el rango real
+  // del periodo (no solo la fecha de la entrega individual).
+  const mapaPeriodos = {};
+  const shPer = ss.getSheetByName(SHEET_PERIODOS);
+  if (shPer && shPer.getLastRow() > 1) {
+    shPer.getRange(2, 1, shPer.getLastRow() - 1, 4).getValues().forEach(r => {
+      const nombreQ = String(r[1] || "").trim();
+      if (!nombreQ) return;
+      mapaPeriodos[nombreQ] = { inicio: r[2], fin: r[3] };
+    });
   }
 
   const mapaCreamosID = {};
@@ -2520,6 +2534,7 @@ function actualizarReportes() {
     const dias    = isNaN(fe) ? 0 : Math.floor((hoy - fe) / (1000 * 60 * 60 * 24));
     const esPend  = estado === "Espera cierre quincena" || estado === "Pendiente";
     const creamosID = mapaCreamosID[p] || "";
+    const periodo   = mapaPeriodos[quincena] || {};
 
     reportes.push([
       fe, mesAño, quincena, creamosID, p,
@@ -2529,21 +2544,24 @@ function actualizarReportes() {
       ub, ur, tasaRechazo, total, estado,
       esPend ? dias : 0,
       // ── Columnas comunes (esquema compartido con sistema_rrhh_mieelo.gs) ──
-      "Manufactura", total, 0
+      "Manufactura", total, 0,
+      // ── Rango real del periodo (desde PERIODOS) ──
+      periodo.inicio || "", periodo.fin || ""
     ]);
   }
 
-  dst.getRange("A3:Q1000").clearContent();
+  dst.getRange("A3:S1000").clearContent();
 
   if (reportes.length) {
-    dst.getRange(3, 1, reportes.length, 17).setValues(reportes);
-    dst.getRange(3, 1, reportes.length, 17)
+    dst.getRange(3, 1, reportes.length, 19).setValues(reportes);
+    dst.getRange(3, 1, reportes.length, 19)
       .setBackground("#ffffff").setFontColor("#212121")
       .setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
     dst.getRange(3, 1,  reportes.length, 1).setNumberFormat("yyyy-mm-dd");
     dst.getRange(3, 11, reportes.length, 1).setNumberFormat("0.00%");
     dst.getRange(3, 12, reportes.length, 1).setNumberFormat('"Q " #,##0.00');
     dst.getRange(3, 16, reportes.length, 1).setNumberFormat('"Q " #,##0.00'); // Monto (común)
+    dst.getRange(3, 18, reportes.length, 2).setNumberFormat("yyyy-mm-dd");    // Inicio/Fin periodo
   }
 }
 
