@@ -3703,8 +3703,21 @@ function importarAuxiliarCostura() {
     csvText = res.getContentText();
   } catch (e) { return ui.alert("❌ Error de red: " + e.message); }
 
-  // — Parsear CSV —
-  const rows = Utilities.parseCsv(csvText);
+  // — Parsear CSV (Kobo puede exportar con coma o con punto y coma) —
+  let rows;
+  try {
+    rows = Utilities.parseCsv(csvText);
+    if (!rows.length || rows[0].length < 2) throw new Error("una sola columna");
+  } catch (e1) {
+    try {
+      rows = Utilities.parseCsv(csvText, ";");
+    } catch (e2) {
+      return ui.alert(
+        "❌ No se pudo interpretar el CSV de Kobo.\n\n" +
+        "Primeras líneas recibidas:\n" + csvText.substring(0, 500)
+      );
+    }
+  }
   if (rows.length < 2) { ss.toast("Sin datos en Kobo.", null, 3); return; }
   const hdrs = rows[0].map(h => h.trim());
   const hi = {};
