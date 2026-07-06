@@ -2473,6 +2473,15 @@ function actualizarReportes() {
   const data   = src.getDataRange().getValues();
   const hoy    = new Date();
 
+  // Forzar encabezados actuales siempre — si la hoja ya existía de antes
+  // (con un esquema de columnas viejo), _setupReportes_ nunca se ejecuta de
+  // nuevo automáticamente y el encabezado queda desalineado con los datos
+  // que se escriben aquí. Reescribir el encabezado en cada corrida evita
+  // ese desfase sin borrar los datos (que se rellenan de nuevo abajo).
+  if (dst && (dst.getRange("A2").getValue() !== "Fecha" || dst.getLastColumn() < 17)) {
+    _setupReportes_(dst);
+  }
+
   const mapaCreamosID = {};
 
   if (catAct) {
