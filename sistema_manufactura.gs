@@ -974,8 +974,8 @@ function repararRedondeoMontos() {
     // 4. Historial Quincenas — col G (7) = Total_Q
     _limpiarRango_(ss.getSheetByName(SHEET_HIST_QUINCENAS), 3, 7, 1, "Historial Quincenas");
 
-    // 5. Reportes PowerBI — col J (10) = Total a Pagar
-    _limpiarRango_(ss.getSheetByName(SHEET_REPORTES), 3, 10, 1, "Reportes PowerBI");
+    // 5. Reportes PowerBI — col L (12) = Total a Pagar
+    _limpiarRango_(ss.getSheetByName(SHEET_REPORTES), 3, 12, 1, "Reportes PowerBI");
 
     // 6. Pagos Pendientes — col F (6) = Total Q
     _limpiarRango_(ss.getSheetByName(SHEET_PAGOS_PEND), 2, 6, 1, "Pagos Pendientes");
@@ -1074,7 +1074,7 @@ function repararTotalesPagos(silencioso) {
   }
 }
 
-/ Aplica la nueva estructura a Cheques y Transferencias (seguro: solo si están vacías o con OK del usuario)
+// Aplica la nueva estructura a Cheques y Transferencias (seguro: solo si están vacías o con OK del usuario)
 function actualizarHojasNuevas() {
   try {
     const ss = SpreadsheetApp.getActive();
@@ -1366,11 +1366,11 @@ function _setupReportes_(sh) {
   sh.clear();
   sh.clearFormats();
 
-  sh.getRange("A1:L1").merge().setValue("REPORTES PARA POWER BI").setFontWeight("bold").setFontSize(12)
+  sh.getRange("A1:N1").merge().setValue("REPORTES PARA POWER BI").setFontWeight("bold").setFontSize(12)
     .setBackground("#37474f").setFontColor("white").setHorizontalAlignment("center");
 
-  sh.getRange("A2:L2").setValues([[
-    "Fecha", "Mes", "Creamos ID", "Participante", "Producto", "Proyecto",
+  sh.getRange("A2:N2").setValues([[
+    "Fecha", "Mes", "Quincena", "Creamos ID", "Participante", "Producto", "Categoría", "Proyecto",
     "Unidades Buenas", "Unidades Rechazadas", "Tasa Rechazo %",
     "Total a Pagar", "Estado Pago", "Días Pendiente"
   ]])
@@ -1379,10 +1379,11 @@ function _setupReportes_(sh) {
   sh.setFrozenRows(2);
   sh.setRowHeight(2, 25);
 
-  sh.setColumnWidth(1, 100);  sh.setColumnWidth(2,  90);  sh.setColumnWidth(3,  110);
-  sh.setColumnWidth(4, 160);  sh.setColumnWidth(5, 120);  sh.setColumnWidth(6,  130);
-  sh.setColumnWidth(7, 110);  sh.setColumnWidth(8, 130);  sh.setColumnWidth(9,  110);
-  sh.setColumnWidth(10, 110); sh.setColumnWidth(11, 150); sh.setColumnWidth(12, 110);
+  sh.setColumnWidth(1, 100);  sh.setColumnWidth(2,  90);  sh.setColumnWidth(3,  90);
+  sh.setColumnWidth(4, 110);  sh.setColumnWidth(5, 160);  sh.setColumnWidth(6,  120);
+  sh.setColumnWidth(7, 130);  sh.setColumnWidth(8, 130);  sh.setColumnWidth(9,  110);
+  sh.setColumnWidth(10, 130); sh.setColumnWidth(11, 110); sh.setColumnWidth(12, 110);
+  sh.setColumnWidth(13, 150); sh.setColumnWidth(14, 110);
 }
 
 // ── Mejora 1: PERIODOS ────────────────────────────────────────────────────────
@@ -2493,36 +2494,39 @@ function actualizarReportes() {
 
     const fe          = new Date(r[m["fecha entrega"] - 1]);
     const mesAño      = isNaN(fe) ? "" : Utilities.formatDate(fe, Session.getScriptTimeZone(), "yyyy-MM");
+    const quincena    = String(r[m["quincena"] - 1] || "").trim();
+    const categoria   = m["categoría"] ? String(r[m["categoría"] - 1] || "").trim() : "";
     const ub          = Number(r[m["unidades buenas"]    - 1]) || 0;
     const ur          = Number(r[m["unidades rechazadas"] - 1]) || 0;
     const tasaRechazo = (ub + ur) > 0 ? ur / (ub + ur) : 0;
     const tapR    = m["total a pagar"] ? Number(r[m["total a pagar"] - 1]) || 0 : 0;
     const tqR     = Number(r[m["total q"] - 1]) || 0;
-    const total   = tapR > 0 ? tapR : tqR * 1.05;
+    const total   = tapR > 0 ? tapR : tqR; // sin impuesto — Total a Pagar = Total Q
     const estado  = String(r[m["estado pago"] - 1] || "").trim();
     const dias    = isNaN(fe) ? 0 : Math.floor((hoy - fe) / (1000 * 60 * 60 * 24));
     const esPend  = estado === "Espera cierre quincena" || estado === "Pendiente";
     const creamosID = mapaCreamosID[p] || "";
 
     reportes.push([
-      fe, mesAño, creamosID, p,
+      fe, mesAño, quincena, creamosID, p,
       String(r[m["producto"]           - 1] || "").trim(),
+      categoria,
       String(r[m["proyecto / cliente"] - 1] || "").trim(),
       ub, ur, tasaRechazo, total, estado,
       esPend ? dias : 0
     ]);
   }
 
-  dst.getRange("A3:L1000").clearContent();
+  dst.getRange("A3:N1000").clearContent();
 
   if (reportes.length) {
-    dst.getRange(3, 1, reportes.length, 12).setValues(reportes);
-    dst.getRange(3, 1, reportes.length, 12)
+    dst.getRange(3, 1, reportes.length, 14).setValues(reportes);
+    dst.getRange(3, 1, reportes.length, 14)
       .setBackground("#ffffff").setFontColor("#212121")
       .setBorder(true, true, true, true, false, false, "#e0e0e0", SpreadsheetApp.BorderStyle.SOLID);
     dst.getRange(3, 1,  reportes.length, 1).setNumberFormat("yyyy-mm-dd");
-    dst.getRange(3, 9,  reportes.length, 1).setNumberFormat("0.00%");
-    dst.getRange(3, 10, reportes.length, 1).setNumberFormat('"Q " #,##0.00');
+    dst.getRange(3, 11, reportes.length, 1).setNumberFormat("0.00%");
+    dst.getRange(3, 12, reportes.length, 1).setNumberFormat('"Q " #,##0.00');
   }
 }
 
