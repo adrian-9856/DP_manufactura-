@@ -288,6 +288,7 @@ function onOpen() {
     .addItem("🔢 Reparar formato DPI y NIT",             "repararFormatoDPI")
     .addItem("🔄 Recalcular tarifas",                    "recalcularTarifas")
     .addItem("📤 Exportar para PowerBI",                 "exportarParaPowerBI")
+    .addItem("📊 Exportar dimensión Participantes (PowerBI)", "actualizarParticipantesPowerBI")
     .addItem("📖 Guía de Uso",                           "crearGuiaUso")
     .addSeparator()
     .addItem("🗑️ Reinstalar sistema (borra TODO)",       "reinstalarSistema");
@@ -8149,9 +8150,19 @@ function exportarParaPowerBI() { _run(function() {
   var HEADERS = [
     "Creamos_ID","Nombre","Proyecto","Programa","Etapa","Categoria",
     "Tarifa_Hora","Tiene_Factura","Banco","Forma_Pago","Hijos_CCI",
-    "Mes","Año","Quincena","Horas_Trabajadas","Monto_Base",
+    "Mes","Año","Quincena","Fecha","Horas_Trabajadas","Monto_Base",
     "IVA","Total_Org_Paga","Neto_Participante","Estipendio","Bono","Fecha_Export"
   ];
+
+  // Convierte Mes(texto)+Año+Quincena en una fecha real para conectar con
+  // una tabla de calendario en Power BI. Q1 → día 1 del mes, Q2 → día 16.
+  function _fechaDeQuincenaExport_(mesTexto, anioTexto, quincenaTexto) {
+    var mesIdx = CFG.MESES.indexOf(String(mesTexto || "").trim());
+    var anio   = parseInt(anioTexto, 10);
+    if (mesIdx < 0 || isNaN(anio)) return "";
+    var dia = String(quincenaTexto || "").trim() === "2" ? 16 : 1;
+    return new Date(anio, mesIdx, dia);
+  }
 
   // Leer HijosCCI — mapa nombre → "Sí (N)" / "No"
   var mapaHijosCCI = {};
@@ -8233,7 +8244,7 @@ function exportarParaPowerBI() { _run(function() {
       filasExport.push([
         p.id, nombre, p.proyecto, p.programa, p.etapa, p.categoria,
         p.tarifa, p.tieneFactura, p.banco, p.formaPago, p.hijosCCI,
-        mes, anioFila, quincena, hrsTrab, base,
+        mes, anioFila, quincena, _fechaDeQuincenaExport_(mes, anioFila, quincena), hrsTrab, base,
         iva, totalOrg, neto, p.estipendio, bono, hoy
       ]);
     });
@@ -8246,7 +8257,7 @@ function exportarParaPowerBI() { _run(function() {
     filasExport.push([
       p.id, nombre, p.proyecto, p.programa, p.etapa, p.categoria,
       p.tarifa, p.tieneFactura, p.banco, p.formaPago, p.hijosCCI,
-      "", "", "", 0, 0, 0, 0, 0, p.estipendio, 0, hoy
+      "", "", "", "", 0, 0, 0, 0, 0, p.estipendio, 0, hoy
     ]);
   });
 
@@ -8262,13 +8273,14 @@ function exportarParaPowerBI() { _run(function() {
     .setFontWeight("bold");
   hExp.setFrozenRows(1);
 
-  // Formato columnas de fecha (col 22 = Fecha_Export)
+  // Formato columnas de fecha (col 15 = Fecha real de la quincena, col 23 = Fecha_Export)
   if (filasExport.length > 0) {
-    hExp.getRange(2, 22, filasExport.length, 1).setNumberFormat("dd/MM/yyyy");
+    hExp.getRange(2, 15, filasExport.length, 1).setNumberFormat("dd/MM/yyyy");
+    hExp.getRange(2, 23, filasExport.length, 1).setNumberFormat("dd/MM/yyyy");
   }
 
-  // Formato columnas Q (cols 7=Tarifa, 16=Base, 17=IVA, 18=Total, 19=Neto, 20=Estipendio, 21=Bono)
-  var colsQ = [7, 16, 17, 18, 19, 20, 21];
+  // Formato columnas Q (cols 7=Tarifa, 17=Base, 18=IVA, 19=Total, 20=Neto, 21=Estipendio, 22=Bono)
+  var colsQ = [7, 17, 18, 19, 20, 21, 22];
   if (filasExport.length > 0) {
     colsQ.forEach(function(c) {
       hExp.getRange(2, c, filasExport.length, 1).setNumberFormat('"Q"#,##0.00');
@@ -8282,6 +8294,74 @@ function exportarParaPowerBI() { _run(function() {
 
   var totalFilas = filasExport.length;
   ss.toast("✅ PowerBI_Export actualizado — " + totalFilas + " filas", "📤", 5);
+}); }
+
+// ── Dimensión Participantes para Power BI ──────────────────────────────────
+// Una fila por persona con sus atributos fijos (mismo formato/nombre de hoja
+// que sistema_manufactura.gs — se relaciona con PowerBI_Export por Creamos_ID).
+function actualizarParticipantesPowerBI() { _run(function() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var NOMBRE_HOJA = "Participantes_PBI";
+  var hPBI = ss.getSheetByName(NOMBRE_HOJA);
+  if (!hPBI) hPBI = ss.insertSheet(NOMBRE_HOJA);
+  hPBI.clearContents();
+  hPBI.clearFormats();
+
+  var HEADERS = [
+    "Creamos_ID","Nombre","Etapa","Categoria","Edad","Fecha_Nacimiento",
+    "Genero","Ano_Entrada_Creamos","Programa","Proyecto","Banco",
+    "Tipo_Cuenta","Forma_Pago","Tiene_Factura","Hijos_CCI"
+  ];
+  hPBI.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS])
+    .setBackground("#004d40").setFontColor("#ffffff").setFontWeight("bold");
+  hPBI.setFrozenRows(1);
+
+  var mapaHijosCCI = {};
+  var hHC = ss.getSheetByName("HijosCCI");
+  if (hHC && hHC.getLastRow() > 1) {
+    hHC.getRange(2, 1, hHC.getLastRow() - 1, 4).getValues().forEach(function(r) {
+      var nombreHC = String(r[1] || "").trim();
+      if (!nombreHC) return;
+      var tieneHC = String(r[2] || "").trim().toUpperCase() === "X";
+      var cantHC  = parseFloat(r[3]) || 0;
+      mapaHijosCCI[nombreHC] = tieneHC ? ("Sí" + (cantHC > 0 ? " (" + cantHC + ")" : "")) : "No";
+    });
+  }
+
+  var hP = ss.getSheetByName(CFG.HOJAS.PARTICIPANTES);
+  var filas = [];
+  if (hP && hP.getLastRow() > 1) {
+    hP.getRange(2, 1, hP.getLastRow() - 1, 23).getValues().forEach(function(r) {
+      var nombre = String(r[1] || "").trim();
+      if (!nombre) return;
+      filas.push([
+        String(r[0]  || "").trim(),                        // Creamos_ID
+        nombre,                                             // Nombre
+        String(r[8]  || "").trim(),                         // Etapa
+        String(r[12] || "").trim(),                         // Categoria
+        Number(r[3]) || "",                                 // Edad
+        r[2] instanceof Date ? r[2] : "",                   // Fecha_Nacimiento
+        String(r[4]  || "").trim(),                         // Genero
+        String(r[5]  || "").trim(),                         // Ano_Entrada_Creamos
+        String(r[7]  || "").trim(),                         // Programa
+        String(r[6]  || "").trim(),                         // Proyecto
+        String(r[18] || "").trim(),                         // Banco
+        String(r[19] || "").trim(),                         // Tipo_Cuenta
+        String(r[21] || "").trim(),                         // Forma_Pago
+        String(r[14] || "").trim(),                         // Tiene_Factura
+        mapaHijosCCI[nombre] || "No"                        // Hijos_CCI
+      ]);
+    });
+  }
+
+  if (filas.length > 0) {
+    hPBI.getRange(2, 1, filas.length, HEADERS.length).setValues(filas);
+    hPBI.getRange(2, 6, filas.length, 1).setNumberFormat("dd/MM/yyyy"); // Fecha_Nacimiento
+  }
+
+  for (var ci = 1; ci <= HEADERS.length; ci++) hPBI.autoResizeColumn(ci);
+
+  ss.toast("✅ Participantes_PBI actualizado — " + filas.length + " personas", "📊", 5);
 }); }
 
 // ══════════════════════════════════════════════════════════════════
