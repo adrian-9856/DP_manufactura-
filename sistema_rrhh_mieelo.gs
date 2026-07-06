@@ -1751,7 +1751,7 @@ function registrarPagosQuincena() { _run(function() {
     var numCuenta  = String(r[20] || "").trim();  // col U = Num_Cuenta (idx 20)
     var formaPago  = String(r[21] || "").trim();  // col V = Forma_Pago (idx 21)
 
-    var servicio = SERVICIO_EXTERNO; // "Costura" — lo que debe llegar a Women Payment 26
+    var servicio = "Textil"; // siempre Textil para el taller (uso interno — Women Payment 26 usa SERVICIO_EXTERNO por separado)
 
     var info = { formaPago: formaPago, banco: banco, tipoCuenta: tipoCuenta,
                  numCuenta: numCuenta, programa: programa, servicio: servicio,
@@ -1942,6 +1942,7 @@ function registrarPagosQuincena() { _run(function() {
         banco:      infoExt.banco,
         tipoCuenta: infoExt.tipoCuenta,
         numCuenta:  infoExt.numCuenta,
+        formaPago:  infoExt.formaPago,
         cuentaPago: "mi-eelo"
       };
     });
@@ -8775,7 +8776,7 @@ function _enviarPagosExterno_(desglose, infoPart, ordenQ, mes) {
   Object.keys(desglose).forEach(function(nombre) {
     var servicios = desglose[nombre];
     var info  = infoPart[nombre] || {};
-    var esChq = String(info.tipoCuenta || "").toLowerCase().trim() === "cheque";
+    var esChq = String(info.formaPago || "").toLowerCase().trim() === "cheque";
     Object.keys(servicios).forEach(function(servicio) {
       var monto = servicios[servicio];
       if (!filasTrans[servicio]) filasTrans[servicio] = [];
