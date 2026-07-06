@@ -98,6 +98,7 @@ function onOpen() {
       .addItem("🔢 Reparar montos y totales",       "repararRedondeoMontos")
       .addItem("🧹 Limpiar datos de prueba",        "limpiarDatosPrueba")
       .addItem("📋 Actualizar participación",       "actualizarParticipacionProgramas")
+      .addItem("📊 Exportar dimensión Participantes (PowerBI)", "actualizarParticipantesPowerBI")
       .addItem("🔄 Actualizar todo",                "actualizarTodo")
       .addSeparator()
       // — Sistema —
@@ -729,7 +730,7 @@ function desinstalarSistema() {
     [
       SHEET_RECEPCIONES, SHEET_CATALOGOS, SHEET_INACTIVOS,
       SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS, SHEET_PAGOS_PEND,
-      SHEET_DASHBOARD, SHEET_REPORTES,
+      SHEET_DASHBOARD, SHEET_REPORTES, SHEET_PART_PBI,
       SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS,
       SHEET_PROGRAMAS, SHEET_HISTORIAL_PAGOS,
       SHEET_ARCHIVO_REC, SHEET_CATALOGO_PROD,
@@ -1120,7 +1121,7 @@ function _crearEstructura_(recrear) {
   const hojasSistema = [
     SHEET_RECEPCIONES, SHEET_CATALOGOS, SHEET_INACTIVOS,
     SHEET_RESUMEN_PART, SHEET_HIST_QUINCENAS,
-    SHEET_DASHBOARD, SHEET_REPORTES,
+    SHEET_DASHBOARD, SHEET_REPORTES, SHEET_PART_PBI,
     SHEET_PERIODOS, SHEET_CHEQUES, SHEET_TRANSFERENCIAS,
     SHEET_HISTORIAL_PAGOS, SHEET_CATALOGO_PROD
   ];
@@ -1148,6 +1149,7 @@ function _crearEstructura_(recrear) {
   setup(SHEET_HIST_QUINCENAS,  _setupHistorialQuincenas_);
   setup(SHEET_DASHBOARD,       _setupDashboard_);
   setup(SHEET_REPORTES,        _setupReportes_);
+  setup(SHEET_PART_PBI,        _setupParticipantesPBI_);
   setup(SHEET_PERIODOS,        _setupPeriodos_);
   setup(SHEET_CHEQUES,         _setupCheques_);
   setup(SHEET_TRANSFERENCIAS,  _setupTransferencias_);
@@ -2028,6 +2030,7 @@ function actualizarTodo() {
   aplicarColoresAutomaticos();
   actualizarDashboard();
   actualizarReportes();
+  actualizarParticipantesPowerBI();
 }
 
 function calcularTotalesColumnas() {
@@ -2530,6 +2533,72 @@ function actualizarReportes() {
   }
 }
 
+// ── Dimensión Participantes para Power BI ──────────────────────────────────
+// Una fila por persona (activa o inactiva) con sus atributos fijos.
+// Se relaciona con "Reportes PowerBI" por Creamos ID para hacer slicers
+// demográficos sin repetir estos datos en cada fila de la tabla de hechos.
+const SHEET_PART_PBI = "Participantes_PBI";
+
+function _setupParticipantesPBI_(sh) {
+  sh.clear();
+  sh.clearFormats();
+  const hdrs = [
+    "Creamos ID", "Nombre", "Activo", "Etapa", "Edad", "Fecha Nacimiento",
+    "Género", "Año Entró Creamos", "Educación", "Inclusión Laboral",
+    "Apoyo Emocional", "N° Hijos", "Banco", "Tipo Cuenta", "Cuenta de Pago"
+  ];
+  sh.getRange(1, 1, 1, hdrs.length).setValues([hdrs])
+    .setBackground("#004d40").setFontColor("#ffffff").setFontWeight("bold")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.setFrozenRows(1);
+  [110, 220, 70, 110, 60, 120, 90, 110, 130, 130, 130, 80, 120, 100, 120]
+    .forEach((w, i) => sh.setColumnWidth(i + 1, w));
+}
+
+function actualizarParticipantesPowerBI() {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(SHEET_PART_PBI);
+  if (!sh) { sh = ss.insertSheet(SHEET_PART_PBI); _setupParticipantesPBI_(sh); }
+  else if (sh.getLastRow() < 1) { _setupParticipantesPBI_(sh); }
+
+  const filas = [];
+  // Nota: "Participantes Inactivos" solo tiene 8 columnas (sin Edad/Género/etc.);
+  // para esas personas los campos demográficos quedan vacíos — ese dato nunca
+  // se capturó ahí, no es un error.
+  function _leerHoja(nombreHoja, activo) {
+    const h = ss.getSheetByName(nombreHoja);
+    if (!h || h.getLastRow() < 2) return;
+    h.getRange(2, 1, h.getLastRow() - 1, 19).getValues().forEach(r => {
+      const nombre = String(r[CAT_COL.NOMBRE] || "").trim();
+      if (!nombre) return;
+      filas.push([
+        String(r[CAT_COL.ID]        || "").trim(),
+        nombre,
+        activo ? "Sí" : "No",
+        String(r[CAT_COL.ETAPA]     || "").trim(),
+        Number(r[CAT_COL.EDAD])     || "",
+        r[CAT_COL.FECHA_NAC] instanceof Date ? r[CAT_COL.FECHA_NAC] : "",
+        String(r[CAT_COL.GENERO]    || "").trim(),
+        String(r[CAT_COL.AÑO_CREAMOS] || "").trim(),
+        r[CAT_COL.EDUCACION]     === true ? "Sí" : "No",
+        r[CAT_COL.INCLUSION_LAB] === true ? "Sí" : "No",
+        r[CAT_COL.APOYO_EMOC]    === true ? "Sí" : "No",
+        Number(r[CAT_COL.HIJOS])    || 0,
+        String(r[CAT_COL.BANCO]        || "").trim(),
+        String(r[CAT_COL.TIPO_CUENTA]  || "").trim(),
+        String(r[CAT_COL.CUENTA_PAGO]  || "").trim()
+      ]);
+    });
+  }
+  _leerHoja(SHEET_CATALOGOS, true);
+  _leerHoja(SHEET_INACTIVOS, false);
+
+  sh.getRange("A2:O5000").clearContent();
+  if (filas.length) {
+    sh.getRange(2, 1, filas.length, 15).setValues(filas);
+    sh.getRange(2, 6, filas.length, 1).setNumberFormat("dd/MM/yyyy");
+  }
+}
 
 // ========================= VALIDACIONES =========================
 function crearValidacionesDatos() {
