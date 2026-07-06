@@ -8205,22 +8205,16 @@ function exportarParaPowerBI() { _run(function() {
   var esNuevaHojaExp = !hExp;
   if (esNuevaHojaExp) hExp = ss.insertSheet(NOMBRE_HOJA);
 
-  // IMPORTANTE: al cerrar una quincena (Q2), _cerrarPeriodoQ2 BORRA la pestaña
-  // del reporte (solo queda el PDF en Drive). Si no preserváramos las filas ya
-  // exportadas de periodos cerrados, se perderían para siempre en la próxima
-  // exportación. Por eso guardamos aquí lo que ya había ANTES de limpiar,
-  // indexado por "mes|año|quincena", y lo recuperamos más abajo para los
-  // periodos cuya pestaña ya no existe.
-  var filasPreviasPorPeriodo = {};
+  // DISEÑO SEGURO: nunca se borra todo el contenido para reconstruirlo desde
+  // cero. Se lee TODO lo que ya existe tal cual está, y solo se REEMPLAZAN
+  // las filas del periodo cuya pestaña de reporte SIGUE existiendo (se
+  // recalcula fresco por si editaste Hrs reponer). Todo lo demás — periodos
+  // ya cerrados, cuya pestaña se borró al cerrar la quincena — se conserva
+  // exactamente igual, sin tocarlo ni intentar reconstruirlo.
+  var filasExistentes = [];
   if (!esNuevaHojaExp && hExp.getLastRow() > 1) {
-    hExp.getRange(2, 1, hExp.getLastRow() - 1, hExp.getLastColumn()).getValues().forEach(function(fp) {
-      var claveP = String(fp[11] || "") + "|" + String(fp[12] || "") + "|" + String(fp[13] || "");
-      if (!filasPreviasPorPeriodo[claveP]) filasPreviasPorPeriodo[claveP] = [];
-      filasPreviasPorPeriodo[claveP].push(fp);
-    });
+    filasExistentes = hExp.getRange(2, 1, hExp.getLastRow() - 1, hExp.getLastColumn()).getValues();
   }
-  hExp.clearContents();
-  hExp.clearFormats();
 
   // Encabezados
   var HEADERS = [
@@ -8278,11 +8272,13 @@ function exportarParaPowerBI() { _run(function() {
     });
   }
 
-  // Leer todos los periodos (PERIODOS) y recorrer cada pestaña de reporte de
-  // quincena — es la fuente real de montos (la misma que usa
-  // registrarPagosQuincena), no la hoja FACTURACION que ya no está en uso.
-  var filasExport = [];
-  var periodosSinDatos = []; // periodos cerrados sin captura previa (irrecuperables)
+  // Leer PERIODOS y recalcular SOLO los que todavía tienen su pestaña de
+  // reporte (activos/recién cerrados sin borrar). Los periodos cuya pestaña
+  // ya no existe no se tocan — sus filas ya guardadas en filasExistentes
+  // se conservan tal cual más abajo.
+  var filasFrescas = [];
+  var clavesRecalculadas = {}; // periodos que SÍ se recalcularon (para no duplicar con lo viejo)
+  var periodosSinDatos = []; // periodos cerrados que nunca se llegaron a exportar (irrecuperables)
   var hPeriodosExp = ss.getSheetByName(CFG.HOJAS.PERIODOS);
   if (hPeriodosExp && hPeriodosExp.getLastRow() > 1) {
     var periodosExp = hPeriodosExp.getRange(2, 1, hPeriodosExp.getLastRow() - 1, 7).getValues();
@@ -8301,59 +8297,74 @@ function exportarParaPowerBI() { _run(function() {
       var fechaQuincExp = _fechaDeQuincenaExport_(mesTexto, anioTexto, quincTexto);
 
       var hRep = tabNombreExp ? ss.getSheetByName(tabNombreExp) : null;
-
-      if (hRep && hRep.getLastRow() >= 4) {
-        // Pestaña todavía existe — recalcular fresco desde el reporte real.
-        var repDataExp = hRep.getDataRange().getValues();
-        for (var ri = 3; ri < repDataExp.length; ri++) {
-          var row = repDataExp[ri];
-          var numFilaExp = row[0];
-          if (!numFilaExp || isNaN(Number(numFilaExp))) continue; // salta subtotales/totales
-          var nombreExp = String(row[1] || "").trim();
-          if (!nombreExp) continue;
-
-          var idExp     = String(row[3]  || "").trim();
-          var horasExp  = parseFloat(row[5])  || 0;  // F = Total hrs
-          var baseExp   = parseFloat(row[8])  || 0;  // I = Monto Base
-          var ivaExp    = parseFloat(row[9])  || 0;  // J = IVA 5%
-          var bonoExp   = parseFloat(row[10]) || 0;  // K = Bono
-          var estipExp  = parseFloat(row[11]) || 0;  // L = Estipendio
-          var totalExp  = parseFloat(row[12]) || 0;  // M = Total org paga
-          var netoExp   = parseFloat(row[14]) || 0;  // O = Neto part.
-          if (totalExp <= 0 && horasExp <= 0) continue; // fila sin actividad real
-
-          var p = mapaParticipantes[nombreExp] || {
-            id: idExp, proyecto: "", programa: "", etapa: "", categoria: "",
-            tarifa: 0, tieneFactura: "", banco: "", formaPago: "",
-            hijosCCI: mapaHijosCCI[nombreExp] || "No"
-          };
-
-          filasExport.push([
-            p.id || idExp, nombreExp, p.proyecto, p.programa, p.etapa, p.categoria,
-            p.tarifa, p.tieneFactura, p.banco, p.formaPago, p.hijosCCI,
-            mesTexto, anioTexto, quincTexto, fechaQuincExp,
-            isNaN(fecIniExp) ? "" : fecIniExp, isNaN(fecFinExp) ? "" : fecFinExp,
-            horasExp, baseExp,
-            ivaExp, totalExp, netoExp, estipExp, bonoExp, hoy,
-            "mi-eelo", totalExp, horasExp
-          ]);
-        }
-      } else if (filasPreviasPorPeriodo[clavePeriodo]) {
-        // Pestaña ya no existe (quincena cerrada) — conservar lo capturado antes.
-        // Si esas filas vienen de un export con menos columnas (esquema viejo),
-        // se rellenan al final con "" para que coincidan con HEADERS.length y
-        // no truene el setValues por número de columnas distinto.
-        filasPreviasPorPeriodo[clavePeriodo].forEach(function(filaVieja) {
-          var filaCompleta = filaVieja.slice(0, HEADERS.length);
-          while (filaCompleta.length < HEADERS.length) filaCompleta.push("");
-          filasExport.push(filaCompleta);
+      if (!hRep || hRep.getLastRow() < 4) {
+        // Pestaña ya no existe (quincena cerrada) — no se toca. Si tampoco hay
+        // nada guardado de antes para este periodo, avisar que es irrecuperable.
+        var yaExistia = filasExistentes.some(function(fp) {
+          return (String(fp[11]||"")+"|"+String(fp[12]||"")+"|"+String(fp[13]||"")) === clavePeriodo;
         });
-      } else if (mesTexto) {
-        // Cerrada y nunca se exportó mientras existía la pestaña — irrecuperable.
-        periodosSinDatos.push(labelExp || clavePeriodo);
+        if (mesTexto && !yaExistia) periodosSinDatos.push(labelExp || clavePeriodo);
+        return;
+      }
+
+      // Pestaña todavía existe — recalcular fresco desde el reporte real.
+      clavesRecalculadas[clavePeriodo] = true;
+      var repDataExp = hRep.getDataRange().getValues();
+      for (var ri = 3; ri < repDataExp.length; ri++) {
+        var row = repDataExp[ri];
+        var numFilaExp = row[0];
+        if (!numFilaExp || isNaN(Number(numFilaExp))) continue; // salta subtotales/totales
+        var nombreExp = String(row[1] || "").trim();
+        if (!nombreExp) continue;
+
+        var idExp     = String(row[3]  || "").trim();
+        var horasExp  = parseFloat(row[5])  || 0;  // F = Total hrs
+        var baseExp   = parseFloat(row[8])  || 0;  // I = Monto Base
+        var ivaExp    = parseFloat(row[9])  || 0;  // J = IVA 5%
+        var bonoExp   = parseFloat(row[10]) || 0;  // K = Bono
+        var estipExp  = parseFloat(row[11]) || 0;  // L = Estipendio
+        var totalExp  = parseFloat(row[12]) || 0;  // M = Total org paga
+        var netoExp   = parseFloat(row[14]) || 0;  // O = Neto part.
+        if (totalExp <= 0 && horasExp <= 0) continue; // fila sin actividad real
+
+        var p = mapaParticipantes[nombreExp] || {
+          id: idExp, proyecto: "", programa: "", etapa: "", categoria: "",
+          tarifa: 0, tieneFactura: "", banco: "", formaPago: "",
+          hijosCCI: mapaHijosCCI[nombreExp] || "No"
+        };
+
+        filasFrescas.push([
+          p.id || idExp, nombreExp, p.proyecto, p.programa, p.etapa, p.categoria,
+          p.tarifa, p.tieneFactura, p.banco, p.formaPago, p.hijosCCI,
+          mesTexto, anioTexto, quincTexto, fechaQuincExp,
+          isNaN(fecIniExp) ? "" : fecIniExp, isNaN(fecFinExp) ? "" : fecFinExp,
+          horasExp, baseExp,
+          ivaExp, totalExp, netoExp, estipExp, bonoExp, hoy,
+          "mi-eelo", totalExp, horasExp
+        ]);
       }
     });
   }
+
+  // Conservar TODAS las filas existentes salvo las de los periodos que se
+  // acaban de recalcular fresco (esas se reemplazan por la versión nueva).
+  // Se rellenan con "" si vienen de un export con menos columnas (esquema
+  // viejo), para que no truene el setValues por número de columnas distinto.
+  var filasConservadas = [];
+  filasExistentes.forEach(function(fp) {
+    var claveExist = String(fp[11]||"") + "|" + String(fp[12]||"") + "|" + String(fp[13]||"");
+    if (clavesRecalculadas[claveExist]) return; // reemplazada por la fresca
+    var filaCompleta = fp.slice(0, HEADERS.length);
+    while (filaCompleta.length < HEADERS.length) filaCompleta.push("");
+    filasConservadas.push(filaCompleta);
+  });
+
+  var filasExport = filasConservadas.concat(filasFrescas);
+
+  // Recién ahora que ya está todo combinado en memoria (lo viejo conservado +
+  // lo nuevo recalculado) se limpia la hoja para volver a escribir todo junto.
+  hExp.clearContents();
+  hExp.clearFormats();
 
   // Escribir en hoja
   hExp.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
